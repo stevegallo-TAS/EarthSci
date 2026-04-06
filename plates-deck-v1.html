@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tectonic Plates — Direct Instruction</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #050d18;
+  --panel:   #0a1628;
+  --teal:    #0D9E7A;
+  --teal-lt: rgba(13,158,122,.12);
+  --blue:    #1a6faa;
+  --warm:    #D4720E;
+  --red:     #C03030;
+  --text:    #d4e8f4;
+  --muted:   #4a7088;
+  --border:  #1a3050;
+  --rule:    #1e3a5a;
+}
+
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+
+/* ── SLIDE ENGINE ── */
+.deck { width: 100vw; height: 100vh; position: relative; }
+.slide {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 48px 60px;
+  opacity: 0; pointer-events: none;
+  transition: opacity .35s;
+}
+.slide.active { opacity: 1; pointer-events: all; }
+
+/* ── BACKGROUND TEXTURE ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: radial-gradient(rgba(13,158,122,.025) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+.slide { z-index: 1; }
+
+/* ── NAVIGATION ── */
+.nav {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 16px; z-index: 100;
+}
+.nav-btn {
+  width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border);
+  background: rgba(255,255,255,.04); color: var(--muted); font-size: 18px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all .2s;
+}
+.nav-btn:hover { border-color: var(--teal); color: var(--teal); background: var(--teal-lt); }
+.slide-counter { font-family: monospace; font-size: 12px; color: var(--muted); min-width: 50px; text-align: center; }
+.progress-bar {
+  position: fixed; top: 0; left: 0; height: 2px;
+  background: linear-gradient(90deg, var(--teal), var(--blue));
+  transition: width .35s; z-index: 100;
+}
+.slide-label {
+  position: fixed; top: 16px; left: 24px; z-index: 100;
+  font-size: 9px; font-weight: 700; color: var(--muted); letter-spacing: .12em;
+  font-family: monospace;
+}
+.slide-key-hint {
+  position: fixed; top: 16px; right: 24px; z-index: 100;
+  font-size: 9px; color: #1a3050; font-family: monospace;
+}
+
+/* ── TYPOGRAPHY ── */
+.tag { font-size: 10px; font-weight: 700; color: var(--teal); letter-spacing: .14em;
+       font-family: monospace; margin-bottom: 12px; }
+.tag.warm { color: var(--warm); }
+.tag.red  { color: var(--red); }
+.tag.blue { color: var(--blue); }
+
+h1 { font-size: clamp(28px, 4vw, 52px); font-weight: 900; color: #d8eef8; line-height: 1.1;
+     letter-spacing: -.02em; text-align: center; }
+h2 { font-size: clamp(22px, 3vw, 38px); font-weight: 800; color: #d8eef8; line-height: 1.2;
+     letter-spacing: -.01em; }
+h3 { font-size: clamp(14px, 1.8vw, 22px); font-weight: 700; color: var(--teal); }
+p  { font-size: clamp(13px, 1.5vw, 18px); color: #8aacb8; line-height: 1.6; }
+.big-p { font-size: clamp(16px, 2vw, 24px); color: #d4e8f4; line-height: 1.5; }
+.em { color: var(--teal); font-weight: 700; }
+.em.warm { color: var(--warm); }
+.em.blue { color: #6ab4e0; }
+.em.red  { color: #e08080; }
+
+/* ── LAYOUT HELPERS ── */
+.row { display: flex; gap: 40px; width: 100%; align-items: flex-start; }
+.col { flex: 1; display: flex; flex-direction: column; gap: 14px; }
+.center { text-align: center; align-items: center; }
+.card {
+  background: rgba(255,255,255,.03); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px 20px;
+}
+.card.teal  { border-color: rgba(13,158,122,.35);  background: rgba(13,158,122,.06); }
+.card.warm  { border-color: rgba(212,114,14,.35);  background: rgba(212,114,14,.06); }
+.card.blue  { border-color: rgba(26,111,170,.35);  background: rgba(26,111,170,.06); }
+.card.red   { border-color: rgba(192,48,48,.35);   background: rgba(192,48,48,.06); }
+
+.bullet { font-size: clamp(13px, 1.5vw, 17px); color: #8aacb8; line-height: 1.7;
+          padding-left: 18px; position: relative; }
+.bullet::before { content: '—'; position: absolute; left: 0; color: var(--teal); }
+.bullet.warm::before { color: var(--warm); }
+.bullet.blue::before { color: var(--blue); }
+.bullet.red::before  { color: var(--red); }
+
+.iris-link {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 16px; border-radius: 8px;
+  border: 1px solid rgba(13,158,122,.4); background: var(--teal-lt);
+  color: var(--teal); font-size: 12px; font-weight: 700; font-family: monospace;
+  text-decoration: none; cursor: pointer; margin-top: 8px;
+  transition: all .2s;
+}
+.iris-link:hover { background: rgba(13,158,122,.2); border-color: var(--teal); }
+.divider { width: 48px; height: 2px; background: var(--teal); border-radius: 2px; margin: 8px 0; }
+
+/* ── SVG DIAGRAM HELPERS ── */
+.diagram-wrap { flex-shrink: 0; }
+
+/* ── TITLE SLIDE ── */
+.title-wrap { text-align: center; max-width: 800px; }
+.title-wrap h1 { margin-bottom: 16px; }
+.subtitle { font-size: clamp(14px, 1.8vw, 20px); color: var(--muted); font-style: italic; margin-bottom: 24px; }
+
+/* ── BOUNDARY TYPE CARDS ── */
+.btype-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; width: 100%; }
+.btype-card { padding: 20px; border-radius: 12px; border: 1px solid; text-align: center; }
+.btype-label { font-size: 10px; font-weight: 700; letter-spacing: .1em; font-family: monospace; margin-bottom: 8px; }
+.btype-title { font-size: 18px; font-weight: 800; margin-bottom: 6px; }
+.btype-desc  { font-size: 13px; color: #8aacb8; line-height: 1.5; }
+
+/* ── ATLAS CALLOUT ── */
+.atlas-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; width: 100%; }
+.atlas-item { padding: 16px; border-radius: 10px; border: 1px solid var(--border);
+              background: rgba(255,255,255,.025); }
+.atlas-icon { font-size: 28px; margin-bottom: 8px; }
+.atlas-name { font-size: 13px; font-weight: 800; color: #d8eef8; margin-bottom: 4px; }
+.atlas-type { font-size: 10px; font-weight: 700; letter-spacing: .08em; font-family: monospace; }
+.atlas-exp  { font-size: 12px; color: #5a7888; line-height: 1.5; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progress"></div>
+<div class="slide-label" id="slide-label">EARTH SCIENCE — UNIT 1 — DAY 2</div>
+<div class="slide-key-hint">← → SPACE to navigate</div>
+
+<div class="deck" id="deck">
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SLIDE 1 — TITLE
+══════════════════════════════════════════════════════════════════ -->
+<div class="slide active" id="s1">
+  <div class="title-wrap">
+    <div class="tag">WHAT YOU JUST FOUND</div>
+    <h1>Now Let's Explain It</h1>
+    <p class="subtitle">You identified the pattern. Here's the mechanism underneath it.</p>
+    <div class="divider" style="margin: 16px auto;"></div>
+    <p style="max-width:560px; margin: 0 auto; color: var(--muted); font-size:15px; line-height:1.7;">
+      Earthquakes and volcanoes cluster in the same places — not by coincidence.
+      They're both symptoms of the same thing happening deep inside Earth.
+    </p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SLIDE 2 — EARTH'S LAYERS
+══════════════════════════════════════════════════════════════════ -->
+<div class="slide" id="s2">
+  <div class="row" style="max-width:960px; align-items:center;">
+    <div class="col">
+      <div class="tag">EARTH'S INTERIOR</div>
+      <h2>Four Layers.<br>Very Different Properties.</h2>
+      <div class="divider"></div>
+      <div class="bullet"><span class="em red">Inner core</span> — solid iron-nickel, ~5000°C. Stays solid due to extreme pressure.</div>
+      <div class="bullet"><span class="em warm">Outer core</span> — liquid iron-nickel. Generates Earth's magnetic field.</div>
+      <div class="bullet"><span class="em" style="color:#c87828">Mantle</span> — mostly solid rock, but flows like very slow silly putty over millions of years. <em style="color:#d4e8f4">This is what moves the plates.</em></div>
+      <div class="bullet"><span class="em" style="color:#5a9a6a">Crust</span> — the thin, brittle outer shell. Where we live. 5–70 km thick.</div>
+      <a class="iris-link" href="https://www.iris.edu/hq/inclass/animation/layers_of_the_earth" target="_blank">
+        ▶ IRIS Animation: Layers of the Earth (~6 min)
+      </a>
+    </div>
+    <div class="diagram-wrap">
+      <!-- Earth layers half-circle SVG -->
+      <svg viewBox="0 0 360 200" width="340" height="190">
+        <defs>
+          <radialGradient id="icg" cx="50%" cy="100%"><stop offset="0%" stop-color="#FF7040"/><stop offset="100%" stop-color="#C03020"/></radialGradient>
+          <radialGradient id="ocg" cx="50%" cy="100%"><stop offset="0%" stop-color="#E06030"/><stop offset="100%" stop-color="#A03020"/></radialGradient>
+          <radialGradient id="mang" cx="50%" cy="100%"><stop offset="0%" stop-color="#9a6020"/><stop offset="100%" stop-color="#6a3a10"/></radialGradient>
+          <radialGradient id="crg" cx="50%" cy="100%"><stop offset="0%" stop-color="#3a6a3a"/><stop offset="100%" stop-color="#1a3a1a"/></radialGradient>
+        </defs>
+        <!-- crust -->
+        <path d="M 3,196 A 177,177 0 0,1 357,196 Z" fill="url(#crg)" stroke="#2a5a2a" stroke-width="1"/>
+        <!-- mantle -->
+        <path d="M 22,196 A 158,158 0 0,1 338,196 Z" fill="url(#mang)" stroke="#4a3010" stroke-width="0.5"/>
+        <!-- outer core -->
+        <path d="M 98,196 A 82,82 0 0,1 262,196 Z" fill="url(#ocg)" stroke="#802010" stroke-width="0.5"/>
+        <!-- inner core -->
+        <path d="M 152,196 A 28,28 0 0,1 208,196 Z" fill="url(#icg)" stroke="#601000" stroke-width="0.5"/>
+        <!-- Labels -->
+        <text x="180" y="192" text-anchor="middle" font-family="monospace" font-size="9" fill="#FF9060" font-weight="bold">INNER CORE</text>
+        <text x="180" y="155" text-anchor="middle" font-family="monospace" font-size="9" fill="#E08050">OUTER CORE</text>
+        <text x="180" y="100" text-anchor="middle" font-family="monospace" font-size="9" fill="#c87828">MANTLE</text>
+        <text x="180" y="30" text-anchor="middle" font-family="monospace" font-size="9" fill="#5a9a6a">CRUST</text>
+        <!-- tick marks / leader lines -->
+        <line x1="132" y1="192" x2="110" y2="185" stroke="#FF906060" stroke-width="0.8"/>
+        <line x1="100" y1="165" x2="78" y2="155" stroke="#E0805060" stroke-width="0.8"/>
+        <line x1="35" y1="115" x2="20" y2="100" stroke="#c8782860" stroke-width="0.8"/>
+        <line x1="12" y1="45" x2="10" y2="30" stroke="#5a9a6a60" stroke-width="0.8"/>
+        <!-- Convection arrows in mantle -->
+        <path d="M 80,130 Q 60,80 100,50" stroke="#c87828" stroke-width="1.2" fill="none" stroke-dasharray="4,3" opacity="0.5"/>
+        <path d="M 280,130 Q 300,80 260,50" stroke="#c87828" stroke-width="1.2" fill="none" stroke-dasharray="4,3" opacity="0.5"/>
+        <text x="45" y="75" font-family="monospace" font-size="7" fill="#c8782870" transform="rotate(-55,45,75)">convection</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SLIDE 3 — CRUST ≠ PLATE
+══════════════════════════════════════════════════════════════════ -->
+<div class="slide" id="s3">
+  <div style="max-width:880px; width:100%;">
+    <div class="tag">COMMON MISCONCEPTION</div>
+    <h2 style="margin-bottom:16px;">Crust ≠ Tectonic Plate</h2>
+    <div class="divider"></div>
+    <div class="row" style="margin-top:20px; align-items:center; gap:50px;">
+      <div class="col">
+        <div class="card">
+          <h3 style="margin-bottom:8px;">The Crust</h3>
+          <p>The outermost chemical layer. Oceanic crust is ~5–10 km thick. Continental crust is ~30–70 km thick.</p>
+        </div>
+        <div class="card teal" style="margin-top:16px;">
+          <h3 style="margin-bottom:8px;">The Tectonic Plate <span style="color:#8aacb8;font-weight:400;font-size:14px;">(= lithosphere)</span></h3>
+          <p>The crust <span class="em">plus</span> the rigid upper portion of the mantle beneath it. About 100 km thick total. <em style="color:#d4e8f4">This is what actually moves.</em></p>
+        </div>
+        <p style="margin-top:12px; font-size:14px; color:var(--muted);">The plates "float" on the softer, flowing asthenosphere below — like ice on slow-moving water.</p>
+      </div>
+      <!-- Diagram: plate cross-section -->
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 300 200" width="300" height="200">
+          <!-- Asthenosphere (flowing mantle) -->
+          <rect x="0" y="130" width="300" height="70" fill="#6a3a10" rx="0"/>
+          <text x="150" y="170" text-anchor="middle" font-family="monospace" font-size="9" fill="#c87828">ASTHENOSPHERE (soft, flowing mantle)</text>
+          <!-- Flow arrows -->
+          <path d="M 20,155 Q 80,145 140,155 Q 200,165 260,155" stroke="#c87828" stroke-width="1.5" fill="none" stroke-dasharray="5,4" opacity="0.6"/>
+          <text x="150" y="190" text-anchor="middle" font-family="monospace" font-size="8" fill="#c8782860">→ slow convective flow →</text>
+
+          <!-- Lithosphere plate -->
+          <rect x="0" y="70" width="300" height="60" fill="#1a3a1a" stroke="#2a5a2a" stroke-width="1"/>
+          <!-- Label: rigid upper mantle part -->
+          <rect x="0" y="95" width="300" height="35" fill="#1e2e1e" opacity="0.7"/>
+          <text x="150" y="117" text-anchor="middle" font-family="monospace" font-size="8.5" fill="#4a7a4a">rigid upper mantle</text>
+          <!-- Label: crust part -->
+          <text x="150" y="90" text-anchor="middle" font-family="monospace" font-size="8.5" fill="#5a9a6a">crust</text>
+
+          <!-- Crust (top of lithosphere) -->
+          <rect x="0" y="70" width="300" height="22" fill="#2a5a2a" stroke="#3a7a3a" stroke-width="1"/>
+          <text x="150" y="85" text-anchor="middle" font-family="monospace" font-size="9" fill="#7acc8a" font-weight="bold">CRUST (~30–70 km)</text>
+
+          <!-- Surface -->
+          <rect x="0" y="60" width="300" height="10" fill="#1a5a2a"/>
+          <text x="150" y="53" text-anchor="middle" font-family="monospace" font-size="8" fill="#5a9a6a">surface (where we live)</text>
+
+          <!-- Brace / label for full plate -->
+          <line x1="288" y1="70" x2="288" y2="130" stroke="var(--teal)" stroke-width="1.5"/>
+          <line x1="283" y1="70" x2="288" y2="70" stroke="var(--teal)" stroke-width="1.5"/>
+          <line x1="283" y1="130" x2="288" y2="130" stroke="var(--teal)" stroke-width="1.5"/>
+          <text x="300" y="104" text-anchor="start" font-family="monospace" font-size="9" fill="var(--teal)" font-weight="bold" writing-mode="vertical-rl" style="writing-mode:initial;"></text>
+          <text x="296" y="96" text-anchor="middle" font-family="monospace" font-size="8" fill="var(--teal)" transform="rotate(90,296,100)">TECTONIC PLATE (~100 km)</text>
+
+          <!-- Thickness arrow -->
+          <line x1="8" y1="70" x2="8" y2="130" stroke="var(--teal)" stroke-width="1" marker-start="url(#arr)" marker-end="url(#arr)"/>
+          <defs>
+            <marker id="arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L6,3 Z" fill="var(--teal)"/>
+            </marker>
+          </defs>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SLIDE 4 — CONVECTION: WHAT MOVES THE PLATES
+══════════════════════════════════════════════════════════════════ -->
+<div class="slide" id="s4">
+  <div style="max-width:900px; width:100%;">
+    <div class="tag warm">THE DRIVING FORCE</div>
+    <h2 style="margin-bottom:8px;">What Actually Moves the Plates</h2>
+    <div class="divider" style="background:var(--warm);"></div>
+    <div class="row" style="margin-top:24px; align-items:center;">
+      <div class="col">
+        <div class="big-p">The mantle is <span class="em">hot at the bottom, cooler at the top.</span></div>
+        <p style="margin-top:12px;">Hot rock expands, becomes less dense, and slowly rises. As it approaches the surface it cools, becomes denser, and sinks. This creates <span class="em warm">convection cells</span> — the engine that drags plates across Earth's surface.</p>
+        <div class="card warm" style="margin-top:16px;">
+          <p><strong style="color:#d4e8f4;">The analogy:</strong> A pot of oatmeal on the stove. The hot oatmeal rises in the center, spreads outward, cools, and sinks at the edges. The plates are like croutons sitting on the surface — dragged along by the flow beneath them.</p>
+        </div>
+        <p style="margin-top:16px; font-size:14px;">Plates move about <span class="em warm">2–10 cm per year</span> — roughly the rate your fingernails grow.</p>
+      </div>
+      <!-- Convection cell diagram -->
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 300 220" width="300" height="220">
+          <!-- Mantle box -->
+          <rect x="10" y="10" width="280" height="180" fill="#3a1a08" stroke="#6a3a10" stroke-width="1" rx="4"/>
+          <!-- Core heat source -->
+          <rect x="10" y="170" width="280" height="20" fill="#C03020" rx="0"/>
+          <text x="150" y="184" text-anchor="middle" font-family="monospace" font-size="8" fill="#ff8060">CORE (heat source)</text>
+          <!-- Surface -->
+          <rect x="10" y="10" width="280" height="16" fill="#1a3a1a" rx="4"/>
+          <text x="150" y="22" text-anchor="middle" font-family="monospace" font-size="8" fill="#5a9a6a">SURFACE / PLATES</text>
+
+          <!-- Left convection cell: CCW -->
+          <path d="M 80,155 Q 40,120 40,80 Q 40,40 80,30 Q 110,22 140,22" stroke="#E06030" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <!-- Rising arrow head -->
+          <polygon points="40,70 34,85 46,85" fill="#E06030"/>
+          <!-- Cooling flow at top -->
+          <path d="M 140,22 Q 110,22 80,30" stroke="#5a8aaa" stroke-width="2" fill="none"/>
+          <!-- Sinking -->
+          <path d="M 80,155 Q 80,155 80,155" stroke="#5a8aaa" stroke-width="2" fill="none"/>
+          <!-- Full CCW cell -->
+          <path d="M 140,160 Q 80,160 45,130 Q 28,100 45,55 Q 62,30 140,26" stroke="#E06030" stroke-width="0" fill="#E0603015" stroke-linecap="round"/>
+          <!-- Ellipse for left cell -->
+          <ellipse cx="90" cy="95" rx="48" ry="62" fill="#E0603018" stroke="#E0603040" stroke-width="1" stroke-dasharray="4,3"/>
+          <text x="90" y="98" text-anchor="middle" font-family="monospace" font-size="8" fill="#E06030">hot</text>
+          <text x="90" y="110" text-anchor="middle" font-family="monospace" font-size="8" fill="#E06030">rises</text>
+
+          <!-- Right convection cell: CW -->
+          <ellipse cx="210" cy="95" rx="48" ry="62" fill="#5a8aaa18" stroke="#5a8aaa40" stroke-width="1" stroke-dasharray="4,3"/>
+          <text x="210" y="98" text-anchor="middle" font-family="monospace" font-size="8" fill="#5a8aaa">cool</text>
+          <text x="210" y="110" text-anchor="middle" font-family="monospace" font-size="8" fill="#5a8aaa">sinks</text>
+
+          <!-- Plate arrows (dragged left and right from center) -->
+          <rect x="100" y="24" width="100" height="10" fill="#2a5a2a" stroke="#3a7a3a" stroke-width="0.5"/>
+          <polygon points="100,28 88,29 100,30" fill="#5a9a6a"/>
+          <polygon points="200,28 212,29 200,30" fill="#5a9a6a"/>
+          <text x="150" y="49" text-anchor="middle" font-family="monospace" font-size="8" fill="#5a9a6a">← plates drag apart →</text>
+          <!-- Rising magma at center -->
+          <rect x="143" y="26" width="14" height="144" fill="#E0603020"/>
+          <text x="150" y="115" text-anchor="middle" font-family="monospace" font-size="7.5" fill="#E06030" transform="rotate(90,150,115)">magma rises</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SLIDE 5 — THREE BOUNDARY TYPES OVERVIEW
+══════════════════════════════════════════════════════════════════ -->
+<div class="slide" id="s5">
+  <div style="max-width:960px; width:100%;">
+    <div class="tag">PLATE BOUNDARIES</div>
+    <h2 style="margin-bottom:8px; text-align:center;">Three Types. Three Different Outcomes.</h2>
+    <div class="divider" style="margin: 8px auto 24px;"></div>
+    <div class="btype-grid">
+      <div class="btype-card" style="border-color:rgba(192,48,48,.4); background:rgba(192,48,48,.06);">
+        <div class="btype-label" style="color:var(--red);">TYPE 1</div>
+        <div class="btype-title" style="color:#e08080;">CONVERGENT</div>
+        <!-- Mini diagram -->
+        <svg viewBox="0 0 120 60" width="120" height="60" style="margin:10px auto;display:block;">
+          <rect x="0" y="30" width="50" height="18" fill="#2a3a2a" stroke="#4a6a4a" stroke-width="1"/>
+          <rect x="70" y="30" width="50" height="18" fill="#1a2a3a" stroke="#3a5a7a" stroke-width="1"/>
+          <polygon points="55,32 68,38 55,44" fill="#C03030"/>
+          <polygon points="65,32 52,38 65,44" fill="#C03030"/>
+          <path d="M 55,48 Q 60,55 65,48" stroke="#E06030" stroke-width="2" fill="none"/>
+          <path d="M 60,55 L 58,50 M 60,55 L 62,50" stroke="#E06030" stroke-width="1.5"/>
+          <text x="60" y="16" text-anchor="middle" font-family="monospace" font-size="8" fill="#888">← plates collide →</text>
+        </svg>
+        <div class="btype-desc">Plates push together. One dives beneath the other (subduction). Creates <strong>deep trenches</strong>, <strong>volcanic arcs</strong>, and major <strong>earthquakes</strong>.</div>
+      </div>
+      <div class="btype-card" style="border-color:rgba(13,158,122,.4); background:rgba(13,158,122,.06);">
+        <div class="btype-label" style="color:var(--teal);">TYPE 2</div>
+        <div class="btype-title" style="color:#5addb8;">DIVERGENT</div>
+        <svg viewBox="0 0 120 60" width="120" height="60" style="margin:10px auto;display:block;">
+          <rect x="0" y="30" width="50" height="18" fill="#2a3a2a" stroke="#4a6a4a" stroke-width="1"/>
+          <rect x="70" y="30" width="50" height="18" fill="#1a2a3a" stroke="#3a5a7a" stroke-width="1"/>
+          <polygon points="50,33 40,38 50,43" fill="#0D9E7A"/>
+          <polygon points="70,33 80,38 70,43" fill="#0D9E7A"/>
+          <path d="M 55,28 Q 60,20 65,28" stroke="#E06030" stroke-width="2" fill="none"/>
+          <path d="M 60,18 L 58,23 M 60,18 L 62,23" stroke="#E06030" stroke-width="1.5"/>
+          <text x="60" y="12" text-anchor="middle" font-family="monospace" font-size="7" fill="#0D9E7A">magma fills gap</text>
+          <rect x="52" y="28" width="16" height="20" fill="#E0603040"/>
+          <text x="60" y="16" text-anchor="middle" font-family="monospace" font-size="7" fill="#888"></text>
+          <text x="60" y="57" text-anchor="middle" font-family="monospace" font-size="7.5" fill="#888">plates pull apart →</text>
+        </svg>
+        <div class="btype-desc">Plates pull apart. Magma rises to fill the gap. Creates <strong>mid-ocean ridges</strong>, <strong>rift valleys</strong>, and <strong>new seafloor</strong>. Moderate earthquakes, lots of volcanism.</div>
+      </div>
+      <div class="btype-card" style="border-color:rgba(26,111,170,.4); background:rgba(26,111,170,.06);">
+        <div class="btype-label" style="color:var(--blue);">TYPE 3</div>
+        <div class="btype-title" style="color:#6ab4e0;">TRANSFORM</div>
+        <svg viewBox="0 0 120 60" width="120" height="60" style="margin:10px auto;display:block;">
+          <rect x="0" y="25" width="55" height="16" fill="#2a3a2a" stroke="#4a6a4a" stroke-width="1"/>
+          <rect x="65" y="35" width="55" height="16" fill="#1a2a3a" stroke="#3a5a7a" stroke-width="1"/>
+          <line x1="60" y1="24" x2="60" y2="52" stroke="#1a6faa" stroke-width="2" stroke-dasharray="3,3"/>
+          <polygon points="40,22 52,25 40,28" fill="#1a6faa"/>
+          <polygon points="80,48 68,45 80,42" fill="#1a6faa"/>
+          <text x="60" y="12" text-anchor="middle" font-family="monospace" font-size="7.5" fill="#888">plates grind sideways</text>
+        </svg>
+        <div class="btype-desc">Plates grind horizontally past each other. No new crust, no volcanism. Creates powerful <strong>strike-slip earthquakes</strong>. Example: San Andreas Fault.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SLIDE 6 — CONVERGENT IN DEPTH
+══════════════════════════════════════════════════════════════════ -->
+<div class="slide" id="s6">
+  <div style="max-width:920px; width:100%;">
+    <div class="tag red">TYPE 1 — CONVERGENT</div>
+    <h2 style="margin-bottom:4px;">Subduction: One Plate Wins</h2>
+    <div class="divider" style="background:var(--red); margin:8px 0 18px;"></div>
+    <div class="row" style="align-items:center;">
+      <div class="col">
+        <p>When an <span class="em red">oceanic plate</span> (dense, thin) meets a <span class="em" style="color:#8080e0;">continental plate</span> (lighter, thicker), the oceanic plate is forced underneath — <strong style="color:#d4e8f4;">subduction.</strong></p>
+        <div style="margin-top:14px; display:flex; flex-direction:column; gap:10px;">
+          <div class="bullet red">The subducting plate drags water and minerals down with it</div>
+          <div class="bullet red">This lowers the melting point of the rock above — generating magma</div>
+          <div class="bullet red">Magma rises → <strong style="color:#d4e8f4;">volcanic arc forms</strong> parallel to the trench</div>
+          <div class="bullet red">The plate "sticks" then suddenly releases → <strong style="color:#d4e8f4;">megathrust earthquakes</strong></div>
+        </div>
+        <div class="card red" style="margin-top:16px;">
+          <p style="font-size:13px;"><strong style="color:#d4e8f4;">Real example:</strong> Japan — the Pacific Plate subducts beneath the Eurasian Plate. Result: the world's most seismically active country, sitting on a volcanic arc. The 2011 Tōhoku earthquake (M9.0) was a megathrust event.</p>
+        </div>
+        <a class="iris-link" style="border-color:rgba(192,48,48,.4); color:#e08080; background:rgba(192,48,48,.08);" href="https://www.iris.edu/hq/inclass/animations" target="_blank">
+          ▶ IRIS: Subduction animation
+        </a>
+      </div>
+      <!-- Subduction cross-section SVG -->
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 320 200" width="320" height="200">
+          <!-- Ocean -->
+          <rect x="0" y="0" width="320" height="55" fill="#0a1628"/>
+          <text x="80" y="30" text-anchor="middle" font-family="monospace" font-size="9" fill="#1a5a8a">OCEAN</text>
+          <!-- Trench label -->
+          <text x="135" y="18" text-anchor="middle" font-family="monospace" font-size="8" fill="#4a7a9a">↓ TRENCH</text>
+
+          <!-- Mantle -->
+          <rect x="0" y="55" width="320" height="145" fill="#3a1a08"/>
+          <!-- Mantle label -->
+          <text x="280" y="170" text-anchor="middle" font-family="monospace" font-size="8" fill="#6a3a10">MANTLE</text>
+
+          <!-- Continental plate -->
+          <polygon points="160,55 320,55 320,90 160,90" fill="#2a4a2a" stroke="#4a7a4a" stroke-width="1"/>
+          <text x="250" y="76" text-anchor="middle" font-family="monospace" font-size="8.5" fill="#5a9a6a">CONTINENTAL PLATE</text>
+
+          <!-- Oceanic plate (subducting) -->
+          <polygon points="0,50 160,50 230,130 170,130" fill="#1a2a4a" stroke="#3a5a7a" stroke-width="1"/>
+          <text x="68" y="66" text-anchor="middle" font-family="monospace" font-size="8" fill="#4a7aaa">OCEANIC</text>
+          <text x="68" y="77" text-anchor="middle" font-family="monospace" font-size="8" fill="#4a7aaa">PLATE</text>
+
+          <!-- Trench -->
+          <polygon points="148,50 172,50 190,80 130,80" fill="#050d18"/>
+
+          <!-- Arrow: motion of oceanic plate -->
+          <path d="M 40,40 L 100,40" stroke="#3a5aaa" stroke-width="2" marker-end="url(#barr)"/>
+          <defs>
+            <marker id="barr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#3a5aaa"/>
+            </marker>
+            <marker id="rarr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#E06030"/>
+            </marker>
+            <marker id="tarr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#C03030"/>
+            </marker>
+          </defs>
+
+          <!-- Magma rising -->
+          <path d="M 185,130 Q 195,100 210,70 Q 218,55 225,40" stroke="#E06030" stroke-width="2.5" fill="none" stroke-dasharray="5,4" marker-end="url(#rarr)"/>
+          <text x="228" y="42" font-family="monospace" font-size="8" fill="#E06030">magma</text>
+
+          <!-- Volcano -->
+          <polygon points="215,55 225,35 235,55" fill="#C03030" stroke="#E06030" stroke-width="1"/>
+          <text x="225" y="28" text-anchor="middle" font-family="monospace" font-size="8" fill="#e08080">🌋</text>
+
+          <!-- Water & minerals label -->
+          <text x="155" y="110" text-anchor="middle" font-family="monospace" font-size="7.5" fill="#4a7aaa" transform="rotate(40,155,110)">H₂O + minerals</text>
+          <path d="M 170,105 Q 178,118 185,130" stroke="#4a7aaa" stroke-width="1" fill="none" stroke-dasharray="3,3"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SLIDE 7 — DIVERGENT IN DEPTH
+══════════════════════════════════════════════════════════════════ -->
+<div class="slide" id="s7">
+  <div style="max-width:920px; width:100%;">
+    <div class="tag">TYPE 2 — DIVERGENT</div>
+    <h2 style="margin-bottom:4px;">Spreading: New Crust is Born</h2>
+    <div class="divider" style="margin:8px 0 18px;"></div>
+    <div class="row" style="align-items:center;">
+      <div class="col">
+        <p>Where plates pull apart, magma from the mantle rises to fill the gap — creating <span class="em">new oceanic crust continuously.</span> The seafloor literally spreads outward from the ridge.</p>
+        <div style="margin-top:14px; display:flex; flex-direction:column; gap:10px;">
+          <div class="bullet">The Mid-Atlantic Ridge is the largest mountain range on Earth — entirely underwater</div>
+          <div class="bullet">Iceland sits directly on the Mid-Atlantic Ridge — it's the only place you can walk between two plates on land</div>
+          <div class="bullet">New crust forms here; old crust is destroyed at subduction zones elsewhere — Earth's surface is in constant recycling</div>
+        </div>
+        <div class="card teal" style="margin-top:16px;">
+          <p style="font-size:13px;"><strong style="color:#d4e8f4;">Rate:</strong> The Atlantic Ocean widens by about 2.5 cm per year. That's how fast the Americas are moving away from Europe and Africa. By the time today's 9th graders are 50, the Atlantic will be about 1 meter wider.</p>
+        </div>
+      </div>
+      <!-- Mid-ocean ridge SVG -->
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 300 200" width="300" height="200">
+          <!-- Ocean water -->
+          <rect x="0" y="0" width="300" height="70" fill="#0a1628"/>
+          <text x="75" y="35" text-anchor="middle" font-family="monospace" font-size="9" fill="#1a5a8a">OCEAN</text>
+          <text x="225" y="35" text-anchor="middle" font-family="monospace" font-size="9" fill="#1a5a8a">OCEAN</text>
+          <!-- Mantle -->
+          <rect x="0" y="130" width="300" height="70" fill="#3a1a08"/>
+          <!-- Left plate -->
+          <polygon points="0,70 130,70 130,130 0,130" fill="#1a2a4a" stroke="#2a4a6a" stroke-width="1"/>
+          <!-- Right plate -->
+          <polygon points="170,70 300,70 300,130 170,130" fill="#1a2a4a" stroke="#2a4a6a" stroke-width="1"/>
+          <!-- Ridge/gap -->
+          <polygon points="130,70 170,70 155,130 145,130" fill="#E06030" opacity="0.9"/>
+          <!-- New crust spreading -->
+          <rect x="115" y="118" width="30" height="12" fill="#2a3a4a" stroke="#3a5a7a" stroke-width="0.5"/>
+          <rect x="95" y="116" width="25" height="14" fill="#243244" stroke="#3a5a7a" stroke-width="0.5"/>
+          <rect x="180" y="118" width="30" height="12" fill="#2a3a4a" stroke="#3a5a7a" stroke-width="0.5"/>
+          <rect x="180" y="116" width="25" height="14" fill="#243244" stroke="#3a5a7a" stroke-width="0.5"/>
+          <!-- Ridge topography -->
+          <path d="M 60,70 Q 100,62 130,70 Q 150,58 170,70 Q 200,62 240,70" stroke="#3a5a7a" stroke-width="1.5" fill="none"/>
+          <!-- Magma upwelling -->
+          <path d="M 150,200 L 150,130" stroke="#E06030" stroke-width="3" marker-end="url(#rarr)" opacity="0.8"/>
+          <text x="150" y="185" text-anchor="middle" font-family="monospace" font-size="8" fill="#E06030">↑ magma</text>
+          <!-- Arrows: plates moving apart -->
+          <path d="M 120,100 L 60,100" stroke="#0D9E7A" stroke-width="2" marker-end="url(#garr)"/>
+          <path d="M 180,100 L 240,100" stroke="#0D9E7A" stroke-width="2" marker-end="url(#garr2)"/>
+          <defs>
+            <marker id="garr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#0D9E7A"/>
+            </marker>
+            <marker id="garr2" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#0D9E7A"/>
+            </marker>
+          </defs>
+          <!-- Labels -->
+          <text x="70" y="90" text-anchor="middle" font-family="monospace" font-size="7.5" fill="#0D9E7A">← spreading</text>
+          <text x="230" y="90" text-anchor="middle" font-family="monospace" font-size="7.5" fill="#0D9E7A">spreading →</text>
+          <text x="150" y="60" text-anchor="middle" font-family="monospace" font-size="8" fill="#E06030">MID-OCEAN RIDGE</text>
+          <!-- Age bands -->
+          <text x="80" y="145" text-anchor="middle" font-family="monospace" font-size="7" fill="#4a7aaa">older crust</text>
+          <text x="220" y="145" text-anchor="middle" font-family="monospace" font-size="7" fill="#4a7aaa">older crust</text>
+          <text x="150" y="145" text-anchor="middle" font-family="monospace" font-size="7" fill="#E06030">new</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SLIDE 8 — TRANSFORM IN DEPTH
+══════════════════════════════════════════════════════════════════ -->
+<div class="slide" id="s8">
+  <div style="max-width:900px; width:100%;">
+    <div class="tag blue">TYPE 3 — TRANSFORM</div>
+    <h2 style="margin-bottom:4px;">Transform: The Grind</h2>
+    <div class="divider" style="background:var(--blue); margin:8px 0 18px;"></div>
+    <div class="row" style="align-items:center; gap:40px;">
+      <div class="col">
+        <p>Plates move horizontally past each other. Crust is neither created nor destroyed — just ground, stressed, and eventually released in an instant.</p>
+        <div style="margin-top:14px; display:flex; flex-direction:column; gap:10px;">
+          <div class="bullet blue">No subduction means no magma generation — <span class="em blue">no volcanoes</span></div>
+          <div class="bullet blue">Instead: stress builds along the fault for decades or centuries, then releases suddenly</div>
+          <div class="bullet blue">The earthquakes produced are powerful, shallow, and close to population centers</div>
+          <div class="bullet blue">Often called "strike-slip" faults — the ground moves horizontally</div>
+        </div>
+        <div class="card blue" style="margin-top:16px;">
+          <p style="font-size:13px;"><strong style="color:#d4e8f4;">Real example:</strong> The San Andreas Fault — Pacific Plate sliding northwest past the North American Plate at ~5 cm/year. Los Angeles sits on the Pacific Plate; San Francisco sits on the North American Plate. They're getting ~6 cm closer to each other every year.</p>
+        </div>
+      </div>
+      <!-- Transform fault SVG -->
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 260 200" width="260" height="200">
+          <!-- Two plates with offset -->
+          <!-- Left plate (top) moving right → -->
+          <rect x="10" y="20" width="115" height="70" fill="#1a2a4a" stroke="#3a5a7a" stroke-width="1" rx="4"/>
+          <text x="67" y="55" text-anchor="middle" font-family="monospace" font-size="9" fill="#4a7aaa">PACIFIC</text>
+          <text x="67" y="67" text-anchor="middle" font-family="monospace" font-size="9" fill="#4a7aaa">PLATE</text>
+          <!-- Left plate (bottom) moving left ← -->
+          <rect x="135" y="110" width="115" height="70" fill="#2a3a2a" stroke="#4a6a4a" stroke-width="1" rx="4"/>
+          <text x="192" y="145" text-anchor="middle" font-family="monospace" font-size="9" fill="#5a9a6a">N. AMERICAN</text>
+          <text x="192" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#5a9a6a">PLATE</text>
+          <!-- Fault line -->
+          <line x1="10" y1="100" x2="250" y2="100" stroke="#1a6faa" stroke-width="2.5" stroke-dasharray="8,4"/>
+          <!-- Motion arrows -->
+          <path d="M 30,40 L 95,40" stroke="#6ab4e0" stroke-width="2.5" marker-end="url(#blarr)"/>
+          <path d="M 220,160 L 155,160" stroke="#5a9a6a" stroke-width="2.5" marker-end="url(#grarr)"/>
+          <defs>
+            <marker id="blarr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#6ab4e0"/>
+            </marker>
+            <marker id="grarr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#5a9a6a"/>
+            </marker>
+          </defs>
+          <text x="62" y="34" text-anchor="middle" font-family="monospace" font-size="8" fill="#6ab4e0">→ NW motion</text>
+          <text x="192" y="175" text-anchor="middle" font-family="monospace" font-size="8" fill="#5a9a6a">← SE motion</text>
+          <!-- Fault label -->
+          <text x="130" y="92" text-anchor="middle" font-family="monospace" font-size="8" fill="#1a6faa">TRANSFORM FAULT</text>
+          <!-- Earthquake symbol -->
+          <text x="130" y="120" text-anchor="middle" font-size="20">⚡</text>
+          <text x="130" y="138" text-anchor="middle" font-family="monospace" font-size="8" fill="#6ab4e0">earthquake zone</text>
+          <!-- No volcano note -->
+          <rect x="10" y="168" width="240" height="22" fill="rgba(26,111,170,.1)" rx="4" stroke="rgba(26,111,170,.3)" stroke-width="0.5"/>
+          <text x="130" y="183" text-anchor="middle" font-family="monospace" font-size="8" fill="#4a7088">No magma generation → No volcanoes here</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SLIDE 9 — HOTSPOTS (YELLOWSTONE BRIDGE)
+══════════════════════════════════════════════════════════════════ -->
+<div class="slide" id="s9">
+  <div style="max-width:900px; width:100%;">
+    <div class="tag warm">THE EXCEPTION</div>
+    <h2 style="margin-bottom:4px;">Hotspots: Volcanism Without a Boundary</h2>
+    <div class="divider" style="background:var(--warm); margin:8px 0 18px;"></div>
+    <div class="row" style="align-items:flex-start; gap:36px;">
+      <div class="col">
+        <p>Not all volcanism occurs at plate boundaries. Some regions have a <span class="em warm">mantle plume</span> — an unusually hot column of mantle rock rising from deep within Earth, punching through the plate above regardless of where that plate is.</p>
+        <div style="margin-top:14px; display:flex; flex-direction:column; gap:10px;">
+          <div class="bullet warm">The plume stays fixed; the plate moves over it slowly</div>
+          <div class="bullet warm">This creates a chain of volcanoes — older ones go extinct, new ones form</div>
+          <div class="bullet warm">Hawaii is the classic example — the Hawaiian Island chain is a record of the Pacific Plate's movement over the hotspot</div>
+          <div class="bullet warm">Yellowstone sits over a hotspot — <em style="color:#d4e8f4;">not</em> at a plate boundary. The North American Plate is moving over it, which is why there's a chain of ancient calderas stretching northeast toward Idaho.</div>
+        </div>
+      </div>
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 280 200" width="280" height="200">
+          <!-- Plate moving right -->
+          <rect x="0" y="40" width="280" height="60" fill="#1a2a4a" stroke="#2a4a6a" stroke-width="1"/>
+          <text x="220" y="72" text-anchor="middle" font-family="monospace" font-size="8" fill="#4a7aaa">plate →</text>
+          <path d="M 160,65 L 200,65" stroke="#4a7aaa" stroke-width="2" marker-end="url(#blarr2)"/>
+          <defs>
+            <marker id="blarr2" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#4a7aaa"/>
+            </marker>
+          </defs>
+          <!-- Mantle -->
+          <rect x="0" y="100" width="280" height="100" fill="#3a1a08"/>
+          <!-- Plume -->
+          <path d="M 80,200 Q 78,150 80,100" stroke="#E06030" stroke-width="12" fill="none" opacity="0.5"/>
+          <path d="M 80,200 Q 78,150 80,100" stroke="#FF8040" stroke-width="5" fill="none"/>
+          <text x="80" y="188" text-anchor="middle" font-family="monospace" font-size="8" fill="#E06030">mantle plume</text>
+          <!-- Volcano chain: oldest left, youngest right -->
+          <!-- Extinct (old) -->
+          <polygon points="20,40 28,22 36,40" fill="#3a3a4a" stroke="#5a5a6a" stroke-width="1"/>
+          <text x="28" y="16" text-anchor="middle" font-family="monospace" font-size="7" fill="#4a4a5a">extinct</text>
+          <polygon points="50,40 60,18 70,40" fill="#3a3a4a" stroke="#5a5a6a" stroke-width="1"/>
+          <!-- Active (over plume) -->
+          <polygon points="68,40 80,10 92,40" fill="#C03030" stroke="#E06030" stroke-width="1.5"/>
+          <text x="80" y="5" text-anchor="middle" font-family="monospace" font-size="8" fill="#E06030">🌋 ACTIVE</text>
+          <!-- Future (not yet) -->
+          <text x="115" y="55" text-anchor="middle" font-family="monospace" font-size="8" fill="#2a4a2a">future?</text>
+          <text x="115" y="66" text-anchor="middle" font-family="monospace" font-size="16">·</text>
+          <!-- Arrow: plate motion relative to plume -->
+          <path d="M 55,85 L 20,85" stroke="#E06030" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#rarr)"/>
+          <text x="36" y="79" text-anchor="middle" font-family="monospace" font-size="7" fill="#E0603080">apparent plume motion</text>
+          <!-- Yellowstone note -->
+          <rect x="140" y="110" width="132" height="76" fill="rgba(212,114,14,.08)" rx="6" stroke="rgba(212,114,14,.3)" stroke-width="1"/>
+          <text x="206" y="126" text-anchor="middle" font-family="monospace" font-size="8.5" fill="#D4720E" font-weight="bold">YELLOWSTONE</text>
+          <text x="206" y="140" text-anchor="middle" font-family="monospace" font-size="8" fill="#8a6040">Over a hotspot.</text>
+          <text x="206" y="153" text-anchor="middle" font-family="monospace" font-size="8" fill="#8a6040">NOT at a plate</text>
+          <text x="206" y="165" text-anchor="middle" font-family="monospace" font-size="8" fill="#8a6040">boundary.</text>
+          <text x="206" y="178" text-anchor="middle" font-family="monospace" font-size="8" fill="#D4720E">Same mechanism.</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SLIDE 10 — ATLAS CONNECTIONS
+══════════════════════════════════════════════════════════════════ -->
+<div class="slide" id="s10">
+  <div style="max-width:900px; width:100%;">
+    <div class="tag">CONNECTING BACK</div>
+    <h2 style="margin-bottom:8px; text-align:center;">ATLAS: Now You Know Why</h2>
+    <p style="text-align:center; margin-bottom:24px; color:var(--muted);">Each hazard from Day 1 maps directly to a mechanism you just learned.</p>
+    <div class="atlas-grid">
+      <div class="atlas-item" style="border-color:rgba(192,48,48,.3); background:rgba(192,48,48,.05);">
+        <div class="atlas-icon">⚡</div>
+        <div class="atlas-name">Cascadia Subduction Zone</div>
+        <div class="atlas-type" style="color:var(--red);">CONVERGENT — SUBDUCTION</div>
+        <div class="atlas-exp">The Juan de Fuca Plate is subducting under the North American Plate. The fault is fully locked — stress builds for centuries, then releases in a M9+ megathrust. The volcanic arc it created is the Cascade Range (Mt. St. Helens, Mt. Rainier).</div>
+      </div>
+      <div class="atlas-item" style="border-color:rgba(13,158,122,.3); background:rgba(13,158,122,.05);">
+        <div class="atlas-icon">🌊</div>
+        <div class="atlas-name">La Palma, Canary Islands</div>
+        <div class="atlas-type" style="color:var(--teal);">DIVERGENT — HOTSPOT MIX</div>
+        <div class="atlas-exp">The Canaries sit near the spreading boundary between the African and Eurasian plates, with hotspot activity beneath. Volcanic island chain built up over millions of years — like Hawaii. The western flank became unstable as the island grew.</div>
+      </div>
+      <div class="atlas-item" style="border-color:rgba(212,114,14,.3); background:rgba(212,114,14,.05);">
+        <div class="atlas-icon">🌋</div>
+        <div class="atlas-name">Yellowstone Caldera</div>
+        <div class="atlas-type" style="color:var(--warm);">HOTSPOT — MANTLE PLUME</div>
+        <div class="atlas-exp">A deep mantle plume punching through the North American Plate. Not at a boundary — the plate is moving over the plume. Ancient eruption sites stretch from Oregon to Wyoming. Magma chamber still active: pressure, uplift, seismicity all monitored live by USGS.</div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:20px; text-align:center; border-color:rgba(13,158,122,.2);">
+      <p style="color:#8aacb8;"><span class="em">The common thread:</span> In all three cases, rock is being melted or stressed by the movement of plates — or by hot material punching up through them. Earth's surface is never still.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SLIDE 11 — PREVIEW / TEASE
+══════════════════════════════════════════════════════════════════ -->
+<div class="slide" id="s11">
+  <div class="title-wrap" style="max-width:760px;">
+    <div class="tag warm">NEXT TIME</div>
+    <h1>Day 3: What Happens<br>When These Boundaries Go?</h1>
+    <div class="divider" style="margin: 18px auto; background:var(--warm);"></div>
+    <p class="subtitle">We know the mechanism. Now let's go deep on the most dangerous examples.</p>
+    <div style="display:flex; gap:20px; margin-top:24px; justify-content:center; flex-wrap:wrap;">
+      <div class="card warm" style="min-width:200px; text-align:center;">
+        <div style="font-size:32px; margin-bottom:8px;">🌋</div>
+        <div style="font-size:14px; font-weight:800; color:#d4e8f4; margin-bottom:4px;">Yellowstone</div>
+        <p style="font-size:12px;">Caldera formation, eruption history, what USGS actually monitors — and what a supereruption would look like.</p>
+      </div>
+      <div class="card red" style="min-width:200px; text-align:center;">
+        <div style="font-size:32px; margin-bottom:8px;">🌊</div>
+        <div style="font-size:14px; font-weight:800; color:#d4e8f4; margin-bottom:4px;">La Palma Mega-Tsunami</div>
+        <p style="font-size:12px;">Flank collapse mechanics, simulated Atlantic tsunami propagation, and what would actually hit the East Coast.</p>
+      </div>
+    </div>
+    <p style="margin-top:24px; font-size:13px; color:#1a3a50;">Today's question: <em>"Why are earthquakes and volcanoes in the same places?"</em><br>
+    Next question: <em>"What happens when the pressure finally gives?"</em></p>
+  </div>
+</div>
+
+</div><!-- /deck -->
+
+<!-- ── NAVIGATION ── -->
+<div class="nav">
+  <button class="nav-btn" id="btn-prev" onclick="go(-1)">&#8592;</button>
+  <span class="slide-counter" id="counter">1 / 11</span>
+  <button class="nav-btn" id="btn-next" onclick="go(1)">&#8594;</button>
+</div>
+
+<script>
+const SLIDES = document.querySelectorAll('.slide');
+const N = SLIDES.length;
+let cur = 0;
+
+function show(n) {
+  SLIDES[cur].classList.remove('active');
+  cur = Math.max(0, Math.min(N-1, n));
+  SLIDES[cur].classList.add('active');
+  document.getElementById('counter').textContent = `${cur+1} / ${N}`;
+  document.getElementById('progress').style.width = `${((cur+1)/N)*100}%`;
+}
+
+function go(dir) { show(cur + dir); }
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ')  go(1);
+  if (e.key === 'ArrowLeft')                     go(-1);
+  if (e.key === 'Home') show(0);
+  if (e.key === 'End')  show(N-1);
+});
+
+// Touch swipe
+let tx = null;
+document.addEventListener('touchstart', e => { tx = e.touches[0].clientX; });
+document.addEventListener('touchend',   e => {
+  if (tx === null) return;
+  const dx = e.changedTouches[0].clientX - tx;
+  if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1);
+  tx = null;
+});
+
+show(0);
+</script>
+</body>
+</html>
