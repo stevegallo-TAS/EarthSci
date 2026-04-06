@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Earth Science — Unit Activities</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #050d18;
+      color: #d4e8f4;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+    .unit-tag { font-size: 10px; font-weight: 700; color: #0D9E7A; letter-spacing: .14em; margin-bottom: 8px; }
+    h1 { font-size: 26px; font-weight: 900; color: #d8eef8; margin-bottom: 4px; }
+    .sub { font-size: 12px; color: #4a7088; font-style: italic; margin-bottom: 40px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; width: 100%; max-width: 900px; }
+    .card {
+      background: rgba(255,255,255,.025);
+      border: 1px solid #1a3050;
+      border-radius: 12px;
+      padding: 20px;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color .2s, background .2s;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card:hover { border-color: #0D9E7A; background: rgba(13,158,122,.06); }
+    .card-icon  { font-size: 28px; }
+    .card-day   { font-size: 9px; font-weight: 700; color: #0D9E7A; letter-spacing: .1em; }
+    .card-title { font-size: 15px; font-weight: 800; color: #d8eef8; }
+    .card-desc  { font-size: 12px; color: #4a7088; line-height: 1.5; }
+    .card-tag   { font-size: 10px; font-family: monospace; color: #1a5040;
+                  background: rgba(13,158,122,.08); border: 1px solid rgba(13,158,122,.15);
+                  border-radius: 4px; padding: 2px 7px; align-self: flex-start; margin-top: auto; }
+    hr { width: 100%; max-width: 900px; border: none; border-top: 1px solid #1a3050; margin: 32px 0; }
+    .section-label { font-size: 10px; font-weight: 700; color: #4a7088; letter-spacing: .12em;
+                     width: 100%; max-width: 900px; margin-bottom: -6px; }
+    footer { margin-top: 48px; font-size: 10px; color: #1a3050; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <div class="unit-tag">PHYSICAL SCIENCE  •  9TH GRADE</div>
+  <h1>Earth on Edge 🌍</h1>
+  <p class="sub">Dynamic Systems &amp; Climate Change</p>
+
+  <div class="section-label">ASTRONOMY UNIT</div>
+  <div class="grid">
+    <a class="card" href="stardust-v1.html">
+      <div class="card-icon">⭐</div>
+      <div class="card-day">STELLAR ASTRONOMY</div>
+      <div class="card-title">Stardust Nucleosynthesis Sim</div>
+      <div class="card-desc">Element Forge, Fusion Lab, Stardust Detective, and unit worksheet. Where the atoms in your body came from.</div>
+      <div class="card-tag">interactive simulation</div>
+    </a>
+  </div>
+
+  <hr>
+
+  <div class="section-label">EARTH SCIENCE &amp; CLIMATE UNIT — PHASE 1: DANGEROUS EARTH</div>
+  <div class="grid">
+    <a class="card" href="atlas-v1.html">
+      <div class="card-icon">🌋</div>
+      <div class="card-day">DAY 1</div>
+      <div class="card-title">ATLAS — Earth Systems Modeler</div>
+      <div class="card-desc">Model Yellowstone, La Palma, and Cascadia. Manipulate variables, trigger events, and find what each system has in common.</div>
+      <div class="card-tag">interactive simulation</div>
+    </a>
+    <a class="card" href="ring-of-fire-v2.html">
+      <div class="card-icon">🗺️</div>
+      <div class="card-day">DAY 2</div>
+      <div class="card-title">Where Does Earth Break?</div>
+      <div class="card-desc">Explore real earthquake and volcano data on a world map. Predict where plate boundaries are — then reveal them.</div>
+      <div class="card-tag">map inquiry</div>
+    </a>
+  </div>
+
+  <footer>stevegallo-tas.github.io/EarthSci</footer>
+</body>
+</html>

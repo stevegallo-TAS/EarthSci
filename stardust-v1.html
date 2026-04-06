@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stardust — Nucleosynthesis Simulator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #050010; min-height: 100vh; }
+    #root { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Storage shim: uses window.storage in Claude, localStorage on GitHub Pages -->
+  <script>
+    if (!window.storage) {
+      window.storage = {
+        get: async (key) => {
+          const val = localStorage.getItem(key);
+          return val ? { key, value: val } : null;
+        },
+        set: async (key, value) => {
+          localStorage.setItem(key, value);
+          return { key, value };
+        },
+        delete: async (key) => {
+          localStorage.removeItem(key);
+          return { key, deleted: true };
+        },
+        list: async (prefix) => {
+          const keys = Object.keys(localStorage).filter(k => !prefix || k.startsWith(prefix));
+          return { keys };
+        }
+      };
+    }
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.10/babel.min.js"></script>
+  <script type="text/babel">
+const { useCallback, useEffect, useMemo, useRef, useState } = React;
+
+// ─── PERSISTENT STORAGE ─────────────────────────────────────────────────────
+
+const STORAGE_KEY = "stardust-progress";
+const SAVE_DELAY = 1500; // ms debounce
+
+async function loadProgress() {
+  try {
+    if (!window.storage) return null;
+    const result = await window.storage.get(STORAGE_KEY);
+    return result ? JSON.parse(result.value) : null;
+  } catch (e) {
+    console.log("No saved progress found");
+    return null;
+  }
+}
+
+async function saveProgress(data) {
+  try {
+    if (!window.storage) return;
+    await window.storage.set(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error("Save failed:", e);
+  }
+}
+
+async function clearProgress() {
+  try {
+    if (!window.storage) return;
+    await window.storage.delete(STORAGE_KEY);
+  } catch (e) {
+    console.error("Clear failed:", e);
+  }
+}
+
+// ─── CORE DATA ──────────────────────────────────────────────────────────────
+
+const ORIGINS = {
+  big_bang: { name: "Big Bang", color: "#F39C12", glow: "#F9E547", icon: "💥", short: "Big Bang" },
+  stellar_fusion: { name: "Stellar Fusion", color: "#E74C3C", glow: "#FF6B6B", icon: "⭐", short: "Stars" },
+  supernova: { name: "Supernovae", color: "#9B59B6", glow: "#C39BD3", icon: "💫", short: "Supernovae" },
+  neutron_merge: { name: "Neutron Star Mergers", color: "#3498DB", glow: "#5DADE2", icon: "🔵", short: "NS Mergers" },
+  cosmic_rays: { name: "Cosmic Ray Fission", color: "#1ABC9C", glow: "#48E0C0", icon: "⚡", short: "Cosmic Rays" },
+};
+
+const ELEMENTS = [
+  { sym: "H", name: "Hydrogen", num: 1, row: 1, col: 1, origin: "big_bang", body: "~60% of your body's atoms; in every water molecule" },
+  { sym: "He", name: "Helium", num: 2, row: 1, col: 18, origin: "big_bang", body: "Trace amounts; used in medical MRI cooling" },
+  { sym: "Li", name: "Lithium", num: 3, row: 2, col: 1, origin: "cosmic_rays", body: "Trace; used in mood-stabilizing medications" },
+  { sym: "Be", name: "Beryllium", num: 4, row: 2, col: 2, origin: "cosmic_rays", body: "Trace; toxic in large amounts" },
+  { sym: "B", name: "Boron", num: 5, row: 2, col: 13, origin: "cosmic_rays", body: "Trace; helps maintain bone health" },
+  { sym: "C", name: "Carbon", num: 6, row: 2, col: 14, origin: "stellar_fusion", body: "Backbone of all organic molecules — DNA, proteins, fats" },
+  { sym: "N", name: "Nitrogen", num: 7, row: 2, col: 15, origin: "stellar_fusion", body: "In every amino acid; ~3% of your body mass" },
+  { sym: "O", name: "Oxygen", num: 8, row: 2, col: 16, origin: "stellar_fusion", body: "~65% of your body mass; in water and biomolecules" },
+  { sym: "F", name: "Fluorine", num: 9, row: 2, col: 17, origin: "stellar_fusion", body: "Strengthens tooth enamel" },
+  { sym: "Ne", name: "Neon", num: 10, row: 2, col: 18, origin: "stellar_fusion", body: "Not used by body; famous for glowing signs" },
+  { sym: "Na", name: "Sodium", num: 11, row: 3, col: 1, origin: "stellar_fusion", body: "Essential for nerve signals" },
+  { sym: "Mg", name: "Magnesium", num: 12, row: 3, col: 2, origin: "stellar_fusion", body: "300+ enzyme reactions; in bones" },
+  { sym: "Al", name: "Aluminum", num: 13, row: 3, col: 13, origin: "stellar_fusion", body: "Most common metal in Earth's crust" },
+  { sym: "Si", name: "Silicon", num: 14, row: 3, col: 14, origin: "stellar_fusion", body: "Basis of computer chips; trace in bone tissue" },
+  { sym: "P", name: "Phosphorus", num: 15, row: 3, col: 15, origin: "stellar_fusion", body: "In DNA, RNA, ATP, and bones" },
+  { sym: "S", name: "Sulfur", num: 16, row: 3, col: 16, origin: "stellar_fusion", body: "In amino acids methionine and cysteine" },
+  { sym: "Cl", name: "Chlorine", num: 17, row: 3, col: 17, origin: "stellar_fusion", body: "In stomach acid (HCl)" },
+  { sym: "Ar", name: "Argon", num: 18, row: 3, col: 18, origin: "stellar_fusion", body: "~1% of Earth's atmosphere" },
+  { sym: "K", name: "Potassium", num: 19, row: 4, col: 1, origin: "stellar_fusion", body: "Critical for heart rhythm" },
+  { sym: "Ca", name: "Calcium", num: 20, row: 4, col: 2, origin: "stellar_fusion", body: "99% is in your bones and teeth" },
+  { sym: "Ti", name: "Titanium", num: 22, row: 4, col: 4, origin: "stellar_fusion", body: "Used in hip replacements" },
+  { sym: "Fe", name: "Iron", num: 26, row: 4, col: 8, origin: "stellar_fusion", body: "In hemoglobin — carries oxygen in blood. Heaviest element stars can fuse." },
+  { sym: "Co", name: "Cobalt", num: 27, row: 4, col: 9, origin: "supernova", body: "Core of vitamin B12" },
+  { sym: "Ni", name: "Nickel", num: 28, row: 4, col: 10, origin: "supernova", body: "Major component of Earth's core" },
+  { sym: "Cu", name: "Copper", num: 29, row: 4, col: 11, origin: "supernova", body: "In enzymes that protect cells" },
+  { sym: "Zn", name: "Zinc", num: 30, row: 4, col: 12, origin: "supernova", body: "Immune system; 100+ enzymes" },
+  { sym: "Se", name: "Selenium", num: 34, row: 4, col: 16, origin: "supernova", body: "Antioxidant; thyroid function" },
+  { sym: "Sr", name: "Strontium", num: 38, row: 5, col: 2, origin: "supernova", body: "Concentrates in bones" },
+  { sym: "Ag", name: "Silver", num: 47, row: 5, col: 11, origin: "neutron_merge", body: "Antimicrobial; wound dressings" },
+  { sym: "Sn", name: "Tin", num: 50, row: 5, col: 14, origin: "supernova", body: "Trace; food can coatings" },
+  { sym: "I", name: "Iodine", num: 53, row: 5, col: 17, origin: "supernova", body: "Essential for thyroid hormones" },
+  { sym: "Ba", name: "Barium", num: 56, row: 6, col: 2, origin: "supernova", body: "Used in medical imaging" },
+  { sym: "W", name: "Tungsten", num: 74, row: 6, col: 6, origin: "neutron_merge", body: "Hardest natural metal" },
+  { sym: "Pt", name: "Platinum", num: 78, row: 6, col: 10, origin: "neutron_merge", body: "Used in chemotherapy drugs" },
+  { sym: "Au", name: "Gold", num: 79, row: 6, col: 11, origin: "neutron_merge", body: "Every atom from colliding neutron stars" },
+  { sym: "Pb", name: "Lead", num: 82, row: 6, col: 14, origin: "supernova", body: "Toxic; historically in pipes/paint" },
+  { sym: "U", name: "Uranium", num: 92, row: 7, col: 4, origin: "neutron_merge", body: "Radioactive; heats Earth's interior" },
+];
+
+const BODY_ELEMENTS = ["H", "O", "C", "N", "Ca", "P", "K", "S", "Na", "Cl", "Mg", "Fe", "Zn", "Cu", "I", "Se", "Co"];
+
+const FUSION_STAGES = [
+  { name: "Big Bang", time: "First 3 min", temp: "~1 billion K", elements: ["H", "He", "Li (trace)"], description: "The universe cools enough for protons and neutrons to fuse into hydrogen and helium nuclei.", color: "#F39C12", notePrompt: "What elements were made? Why couldn't heavier elements form?" },
+  { name: "Main Sequence", time: "Billions of yr", temp: "~15 million K", elements: ["He (from H)"], description: "Stars fuse hydrogen into helium through the proton-proton chain. This is the longest, most stable phase.", color: "#F1C40F", notePrompt: "What fusion reaction powers main sequence stars?" },
+  { name: "Giant Star Cores", time: "Millions of yr", temp: "~200 million K", elements: ["C", "N", "O", "Ne", "Mg"], description: "Helium fuses into carbon via the triple-alpha process, then heavier elements form as the core contracts.", color: "#E67E22", notePrompt: "What elements vital to life are made here?" },
+  { name: "Massive Star Cores", time: "Thousands of yr", temp: "~3 billion K", elements: ["Si", "S", "Ca", "Ti", "Fe"], description: "Massive stars fuse in 'onion shell' layers. Iron is the end — fusing it consumes energy.", color: "#E74C3C", notePrompt: "Why is iron the 'end of the line' for fusion?" },
+  { name: "Supernovae", time: "Seconds", temp: "~100 billion K", elements: ["Co", "Ni", "Cu", "Zn", "I", "Ba", "Pb+"], description: "Core collapse triggers an explosion. The r-process forges elements beyond iron in seconds.", color: "#9B59B6", notePrompt: "What is the r-process? Why do heavy elements need explosions?" },
+  { name: "NS Mergers", time: "Milliseconds", temp: "Extreme", elements: ["Ag", "Au", "Pt", "W", "U"], description: "Two neutron stars collide in a kilonova, producing the heaviest elements like gold and uranium.", color: "#3498DB", notePrompt: "What is a kilonova? Name 2 elements made this way." },
+];
+
+// ─── FUSION LAB DATA ────────────────────────────────────────────────────────
+
+const LAB_STAGES = [
+  {
+    id: "hydrogen", name: "Hydrogen Burning", fuel: "H", fuelName: "Hydrogen",
+    tempNeeded: 15, tempLabel: "15 million K", products: [{ sym: "He", name: "Helium" }],
+    equation: "4 H → He + energy + neutrinos", starSize: 0.5, starColor: "#F1C40F",
+    description: "Fuse hydrogen into helium — the same reaction powering our Sun right now.",
+    fact: "Our Sun converts 600 million tons of hydrogen into helium every second.",
+  },
+  {
+    id: "helium", name: "Helium Burning (Triple-Alpha)", fuel: "He", fuelName: "Helium",
+    tempNeeded: 200, tempLabel: "200 million K", products: [{ sym: "C", name: "Carbon" }],
+    equation: "3 He → C + energy", starSize: 0.7, starColor: "#E67E22",
+    description: "Three helium nuclei fuse into carbon. This requires much more heat — the star must be a giant.",
+    fact: "Without the triple-alpha process, carbon wouldn't exist — and neither would life.",
+  },
+  {
+    id: "carbon", name: "Carbon Burning", fuel: "C", fuelName: "Carbon",
+    tempNeeded: 600, tempLabel: "600 million K", products: [{ sym: "O", name: "Oxygen" }, { sym: "Ne", name: "Neon" }, { sym: "Mg", name: "Magnesium" }],
+    equation: "C + C → O, Ne, Mg + energy", starSize: 0.85, starColor: "#E74C3C",
+    description: "Carbon nuclei fuse to produce oxygen, neon, and magnesium. The star is building layers.",
+    fact: "The oxygen you're breathing right now was forged in a carbon-burning stellar core.",
+  },
+  {
+    id: "silicon", name: "Silicon Burning", fuel: "Si", fuelName: "Silicon",
+    tempNeeded: 3000, tempLabel: "3 billion K", products: [{ sym: "Fe", name: "Iron" }],
+    equation: "Si → Fe (via many steps)", starSize: 1.0, starColor: "#C0392B",
+    description: "Silicon fuses into iron — the final step. Iron is the most stable nucleus. Fusing ANYTHING heavier costs energy.",
+    fact: "Silicon burning lasts only about ONE DAY before the star's core is pure iron.",
+  },
+  {
+    id: "iron_crisis", name: "⚠️ The Iron Crisis", fuel: "Fe", fuelName: "Iron",
+    tempNeeded: 5000, tempLabel: "???", products: [],
+    equation: "Fe + energy → COLLAPSE", starSize: 1.0, starColor: "#E74C3C",
+    description: "Try to fuse iron... but it ABSORBS energy instead of releasing it. The core loses pressure support and collapses!",
+    isCrisis: true,
+    fact: "The iron core collapses at 70,000 km/s — about 25% the speed of light.",
+  },
+  {
+    id: "supernova", name: "💥 Supernova Detonation", fuel: null, fuelName: null,
+    tempNeeded: 0, tempLabel: "100 billion K",
+    products: [{ sym: "Co", name: "Cobalt" }, { sym: "Cu", name: "Copper" }, { sym: "Zn", name: "Zinc" }, { sym: "Ag", name: "Silver" }, { sym: "I", name: "Iodine" }],
+    equation: "Rapid neutron capture (r-process)", starSize: 0, starColor: "#9B59B6",
+    isExplosion: true,
+    description: "BOOM! The collapsing core rebounds. In seconds, the r-process forges dozens of elements heavier than iron.",
+    fact: "A supernova briefly outshines an entire galaxy of 100 billion stars.",
+  },
+  {
+    id: "merger", name: "🔵 Neutron Star Merger", fuel: null, fuelName: null,
+    tempNeeded: 0, tempLabel: "Extreme",
+    products: [{ sym: "Au", name: "Gold" }, { sym: "Pt", name: "Platinum" }, { sym: "U", name: "Uranium" }],
+    equation: "NS + NS → kilonova → heaviest elements", starSize: 0, starColor: "#3498DB",
+    isMerger: true,
+    description: "Two neutron stars spiral together and collide in a kilonova — forging the universe's heaviest elements.",
+    fact: "A single neutron star merger can produce several Earth-masses of gold.",
+  },
+];
+
+// ─── DETECTIVE DATA ─────────────────────────────────────────────────────────
+
+const DETECTIVE_OBJECTS = [
+  {
+    name: "Glass of Water", icon: "🥤", description: "A simple glass of H₂O — but its atoms have a cosmic history.",
+    elements: [
+      { sym: "H", name: "Hydrogen", origin: "big_bang", role: "Two hydrogen atoms per water molecule" },
+      { sym: "O", name: "Oxygen", origin: "stellar_fusion", role: "One oxygen atom per water molecule" },
+    ],
+    reveal: "Your water is a collaboration between the Big Bang (hydrogen, 13.8 billion years old) and a dead star (oxygen, forged in a giant star's core)."
+  },
+  {
+    name: "Your Hand", icon: "🖐️", description: "Hold up your hand. Every atom was forged in cosmic fire.",
+    elements: [
+      { sym: "O", name: "Oxygen", origin: "stellar_fusion", role: "65% of mass — in water and biomolecules" },
+      { sym: "C", name: "Carbon", origin: "stellar_fusion", role: "18% — backbone of DNA, proteins, fats" },
+      { sym: "H", name: "Hydrogen", origin: "big_bang", role: "10% — in every water molecule" },
+      { sym: "Ca", name: "Calcium", origin: "stellar_fusion", role: "1.5% — in your finger bones" },
+      { sym: "Fe", name: "Iron", origin: "stellar_fusion", role: "Trace — hemoglobin carrying oxygen in blood" },
+    ],
+    reveal: "Your hand is made from at least 3 different cosmic processes. The hydrogen is older than every star in the sky."
+  },
+  {
+    name: "Gold Ring", icon: "💍", description: "A ring — but where did its atoms actually come from?",
+    elements: [{ sym: "Au", name: "Gold", origin: "neutron_merge", role: "The ring itself — pure gold" }],
+    reveal: "Every gold atom was created when two neutron stars collided in a kilonova — the most violent event in the universe."
+  },
+  {
+    name: "Smartphone", icon: "📱", description: "Your phone contains elements from every corner of the cosmos.",
+    elements: [
+      { sym: "Si", name: "Silicon", origin: "stellar_fusion", role: "Processor chip — the 'brain'" },
+      { sym: "Cu", name: "Copper", origin: "supernova", role: "Wiring and circuit connections" },
+      { sym: "Au", name: "Gold", origin: "neutron_merge", role: "Connector pins" },
+      { sym: "Li", name: "Lithium", origin: "cosmic_rays", role: "Battery" },
+    ],
+    reveal: "Your phone is a mashup of ALL cosmic processes: stellar silicon, supernova copper, kilonova gold, and cosmic-ray lithium."
+  },
+  {
+    name: "Steel Nail", icon: "🔩", description: "An ordinary nail — but it tells the story of a dying star.",
+    elements: [
+      { sym: "Fe", name: "Iron", origin: "stellar_fusion", role: "~98% — the primary metal" },
+      { sym: "C", name: "Carbon", origin: "stellar_fusion", role: "~1% — makes iron into steel" },
+      { sym: "Ni", name: "Nickel", origin: "supernova", role: "Trace — corrosion resistance" },
+    ],
+    reveal: "Iron was literally a star's final creation — the element that triggered its collapse into a supernova."
+  },
+];
+
+// ─── WORKSHEET DATA ─────────────────────────────────────────────────────────
+
+const MC_QS = [
+  { q: "Which two elements were primarily created in the Big Bang?", opts: ["Carbon and Oxygen", "Hydrogen and Helium", "Iron and Nickel", "Gold and Silver"], a: 1 },
+  { q: "What is the heaviest element that can be created by fusion inside a star?", opts: ["Carbon", "Silicon", "Iron", "Uranium"], a: 2 },
+  { q: "Where was the gold in jewelry originally created?", opts: ["Inside our Sun", "In the Big Bang", "In neutron star mergers", "In Earth's core"], a: 2 },
+  { q: "Why can't stars fuse elements heavier than iron?", opts: ["Stars aren't hot enough", "Iron fusion consumes energy instead of releasing it", "Iron is too rare", "Gravity prevents it"], a: 1 },
+  { q: "The carbon in your DNA was made…", opts: ["In the Big Bang", "In cores of stars that died before our Sun", "On Earth through chemistry", "In our Sun right now"], a: 1 },
+];
+
+const SORT_ITEMS = [
+  { element: "Hydrogen", origin: "big_bang" }, { element: "Carbon", origin: "stellar_fusion" },
+  { element: "Iron", origin: "stellar_fusion" }, { element: "Gold", origin: "neutron_merge" },
+  { element: "Zinc", origin: "supernova" }, { element: "Helium", origin: "big_bang" },
+  { element: "Lithium", origin: "cosmic_rays" }, { element: "Platinum", origin: "neutron_merge" },
+  { element: "Iodine", origin: "supernova" }, { element: "Calcium", origin: "stellar_fusion" },
+];
+
+const TF_QS = [
+  { s: "Our Sun is currently making carbon in its core.", a: false, why: "Our Sun only fuses hydrogen into helium. Carbon requires a more evolved, more massive star." },
+  { s: "Every atom in your body was once inside a star.", a: false, why: "Almost — but hydrogen (60% of your atoms!) was created in the Big Bang, not in stars." },
+  { s: "A supernova is necessary to scatter heavy elements into space.", a: true, why: "Without supernovae dispersing elements, they'd stay locked in remnants. Our solar system formed from this enriched material." },
+  { s: "Iron marks the boundary between stellar fusion and explosive nucleosynthesis.", a: true, why: "Iron has the most stable nucleus. Fusing heavier elements requires energy input — only explosions can provide it." },
+  { s: "The Big Bang created all elements on the periodic table.", a: false, why: "The Big Bang only created hydrogen, helium, and trace lithium. Everything else was made later." },
+];
+
+const COMPARE_CATS = ["Temperature needed", "Time scale", "Elements produced", "How elements disperse", "How common?"];
+const COMPARE_S = ["~15M–3B K", "Millions to billions of years", "Helium through Iron", "Stellar winds, planetary nebulae", "Constant — happening in billions of stars now"];
+const COMPARE_E = ["~100 billion K+", "Seconds to milliseconds", "Everything heavier than Iron", "Supernova blast / kilonova debris", "Rare — a few per century per galaxy"];
+
+// ─── SHARED COMPONENTS ──────────────────────────────────────────────────────
+
+function SectionHeader({ number, title, icon, subtitle }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #E67E22, #E74C3C)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: "#fff", flexShrink: 0 }}>{number}</div>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 16, color: "#ECF0F1" }}>{icon} {title}</h3>
+          {subtitle && <p style={{ margin: "2px 0 0", fontSize: 12, color: "#556" }}>{subtitle}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── FORGE VISUAL ───────────────────────────────────────────────────────────
+
+function ForgeVisual({ stageIdx, size = 220 }) {
+  const canvasRef = useRef(null);
+  const frameRef = useRef(0);
+  const stage = FUSION_STAGES[stageIdx];
+  useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d"); let animId;
+    const s = size / 220;
+    const draw = () => {
+      frameRef.current++; const f = frameRef.current;
+      ctx.clearRect(0, 0, size, size * 0.82);
+      const cx = size / 2, cy = size * 0.41;
+      const bg = ctx.createRadialGradient(cx, cy, 8, cx, cy, 90 * s);
+      bg.addColorStop(0, stage.color + "33"); bg.addColorStop(1, "transparent");
+      ctx.beginPath(); ctx.arc(cx, cy, 90 * s, 0, Math.PI * 2); ctx.fillStyle = bg; ctx.fill();
+      if (stageIdx === 0) {
+        const e = Math.sin(f * 0.03) * 8;
+        for (let i = 0; i < 20; i++) { const a = (i / 20) * Math.PI * 2 + f * 0.01, d = 15 + i * 2.5 + e; const g = ctx.createRadialGradient(cx + Math.cos(a) * d * s, cy + Math.sin(a) * d * s, 0, cx + Math.cos(a) * d * s, cy + Math.sin(a) * d * s, 3 * s); g.addColorStop(0, i < 12 ? "#FFF" : "#F9E547"); g.addColorStop(1, "transparent"); ctx.beginPath(); ctx.arc(cx + Math.cos(a) * d * s, cy + Math.sin(a) * d * s, 3 * s, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill(); }
+        const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 15 * s + e * s / 2); cg.addColorStop(0, "#FFF"); cg.addColorStop(0.5, "#F9E547"); cg.addColorStop(1, "transparent"); ctx.beginPath(); ctx.arc(cx, cy, 15 * s + e * s / 2, 0, Math.PI * 2); ctx.fillStyle = cg; ctx.fill();
+      } else if (stageIdx <= 3) {
+        const p = Math.sin(f * 0.04) * 3, r = (20 + stageIdx * 10) * s + p;
+        const g = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.2, r * 0.1, cx, cy, r); g.addColorStop(0, "#FFF"); g.addColorStop(0.3, stage.color + "CC"); g.addColorStop(1, stage.color + "44"); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
+        if (stageIdx === 3) { ["#F1C40F", "#E67E22", "#E74C3C", "#C0392B"].forEach((c, li) => { const lr = r - li * 6 - 3; if (lr > 0) { ctx.beginPath(); ctx.arc(cx, cy, lr, 0, Math.PI * 2); ctx.strokeStyle = c + "88"; ctx.lineWidth = 1.5; ctx.stroke(); } }); ctx.fillStyle = "#444"; ctx.beginPath(); ctx.arc(cx, cy, 6 * s, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "#FFF"; ctx.font = `bold ${6 * s}px Arial`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("Fe", cx, cy); }
+      } else if (stageIdx === 4) {
+        const pr = (Math.sin(f * 0.025) + 1) / 2;
+        for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2 + f * 0.015, d = 15 + pr * 55; const g = ctx.createRadialGradient(cx + Math.cos(a) * d * s, cy + Math.sin(a) * d * s, 0, cx + Math.cos(a) * d * s, cy + Math.sin(a) * d * s, 4 * s); g.addColorStop(0, "#FFF"); g.addColorStop(0.5, stage.color); g.addColorStop(1, "transparent"); ctx.beginPath(); ctx.arc(cx + Math.cos(a) * d * s, cy + Math.sin(a) * d * s, 4 * s, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill(); }
+        const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, 11 * s); core.addColorStop(0, "#FFF"); core.addColorStop(1, stage.color + "88"); ctx.beginPath(); ctx.arc(cx, cy, 11 * s, 0, Math.PI * 2); ctx.fillStyle = core; ctx.fill();
+      } else {
+        const o = Math.sin(f * 0.04) * 16; const x1 = cx - 18 * s + o * s, x2 = cx + 18 * s - o * s;
+        [[x1, cy], [x2, cy]].forEach(p => { const ng = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], 8 * s); ng.addColorStop(0, "#5DADE2"); ng.addColorStop(1, "#3498DB44"); ctx.beginPath(); ctx.arc(p[0], p[1], 8 * s, 0, Math.PI * 2); ctx.fillStyle = ng; ctx.fill(); });
+        if (Math.abs(o) < 4) { const b = (4 - Math.abs(o)) / 4; for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2, d = b * 45 * s; const g = ctx.createRadialGradient(cx + Math.cos(a) * d, cy + Math.sin(a) * d, 0, cx + Math.cos(a) * d, cy + Math.sin(a) * d, 3 * b * s); g.addColorStop(0, "#F9E547"); g.addColorStop(1, "transparent"); ctx.beginPath(); ctx.arc(cx + Math.cos(a) * d, cy + Math.sin(a) * d, 3 * b * s, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill(); } }
+      }
+      animId = requestAnimationFrame(draw);
+    }; draw(); return () => cancelAnimationFrame(animId);
+  }, [stageIdx, size]);
+  return <canvas ref={canvasRef} width={size} height={Math.floor(size * 0.82)} style={{ width: size, height: Math.floor(size * 0.82) }} />;
+}
+
+// ─── FUSION LAB REACTOR VISUAL ──────────────────────────────────────────────
+
+function ReactorVisual({ stageIdx, temp, fusing, collapsed, exploding, merging }) {
+  const canvasRef = useRef(null);
+  const frameRef = useRef(0);
+  useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d"); let animId;
+    const draw = () => {
+      frameRef.current++; const f = frameRef.current;
+      const W = 300, H = 300; ctx.clearRect(0, 0, W, H);
+      const cx = W / 2, cy = H / 2;
+
+      if (exploding) {
+        // Supernova explosion
+        const p = Math.min(f / 60, 1);
+        for (let i = 0; i < 30; i++) {
+          const a = (i / 30) * Math.PI * 2 + f * 0.02 + Math.sin(i * 3) * 0.5;
+          const d = p * 140;
+          const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
+          const r = (1 - p * 0.6) * 12;
+          const colors = ["#FFFFFF", "#FFE066", "#FF6B35", "#9B59B6", "#3498DB"];
+          const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+          g.addColorStop(0, colors[i % colors.length]); g.addColorStop(1, "transparent");
+          ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
+        }
+        // Element labels flying out
+        const elems = ["Co", "Cu", "Zn", "Ag", "I"];
+        ctx.font = "bold 12px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        elems.forEach((e, i) => {
+          const a = (i / elems.length) * Math.PI * 2 - Math.PI / 2;
+          const d = p * 100 + 20;
+          ctx.fillStyle = `rgba(255,255,255,${Math.max(0, 1 - p * 0.8)})`; ctx.fillText(e, cx + Math.cos(a) * d, cy + Math.sin(a) * d);
+        });
+      } else if (merging) {
+        // Neutron star merger
+        const osc = Math.sin(f * 0.06) * 50;
+        const dist = Math.max(0, Math.abs(osc));
+        const x1 = cx - dist, x2 = cx + dist;
+        [[x1, cy], [x2, cy]].forEach(p => {
+          const ng = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], 20);
+          ng.addColorStop(0, "#5DADE2"); ng.addColorStop(1, "#3498DB44");
+          ctx.beginPath(); ctx.arc(p[0], p[1], 20, 0, Math.PI * 2); ctx.fillStyle = ng; ctx.fill();
+        });
+        if (dist < 10) {
+          const burst = (10 - dist) / 10;
+          for (let i = 0; i < 16; i++) {
+            const a = (i / 16) * Math.PI * 2, d2 = burst * 80;
+            const g = ctx.createRadialGradient(cx + Math.cos(a) * d2, cy + Math.sin(a) * d2, 0, cx + Math.cos(a) * d2, cy + Math.sin(a) * d2, 6 * burst);
+            g.addColorStop(0, "#F9E547"); g.addColorStop(1, "transparent");
+            ctx.beginPath(); ctx.arc(cx + Math.cos(a) * d2, cy + Math.sin(a) * d2, 6 * burst, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
+          }
+          const els = ["Au", "Pt", "U"];
+          ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          els.forEach((e, i) => {
+            const a = (i / els.length) * Math.PI * 2 - Math.PI / 2;
+            const d2 = burst * 60 + 10;
+            ctx.fillStyle = `rgba(249,229,71,${burst})`; ctx.fillText(e, cx + Math.cos(a) * d2, cy + Math.sin(a) * d2);
+          });
+        }
+      } else if (collapsed) {
+        // Iron crisis collapse
+        const p = Math.min(f / 40, 1);
+        const r = 60 * (1 - p * 0.85);
+        const shakeX = (1 - p) * (Math.random() - 0.5) * 10;
+        const shakeY = (1 - p) * (Math.random() - 0.5) * 10;
+        const g = ctx.createRadialGradient(cx + shakeX, cy + shakeY, 0, cx + shakeX, cy + shakeY, r);
+        g.addColorStop(0, "#FFF"); g.addColorStop(0.3, "#E74C3C"); g.addColorStop(0.7, "#C0392B"); g.addColorStop(1, "rgba(192,57,43,0)");
+        ctx.beginPath(); ctx.arc(cx + shakeX, cy + shakeY, r, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
+        // Infall arrows
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          const d = 100 * (1 - p);
+          ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * (d + 30), cy + Math.sin(a) * (d + 30));
+          ctx.lineTo(cx + Math.cos(a) * d, cy + Math.sin(a) * d);
+          ctx.strokeStyle = `rgba(231,76,60,${1 - p})`; ctx.lineWidth = 2; ctx.stroke();
+        }
+        ctx.fillStyle = "#FFF"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("Fe", cx + shakeX, cy + shakeY);
+      } else {
+        // Normal star reactor
+        const stage = LAB_STAGES[stageIdx] || LAB_STAGES[0];
+        const starR = 30 + (stage.starSize || 0.5) * 40;
+        const heatGlow = Math.min(temp / 3000, 1);
+        const pulse = Math.sin(f * 0.04) * 3;
+        const r = starR + pulse;
+
+        // Outer glow
+        const outer = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * 2.2);
+        outer.addColorStop(0, (stage.starColor || "#F1C40F") + Math.floor(heatGlow * 60 + 10).toString(16).padStart(2, "0"));
+        outer.addColorStop(1, "transparent");
+        ctx.beginPath(); ctx.arc(cx, cy, r * 2.2, 0, Math.PI * 2); ctx.fillStyle = outer; ctx.fill();
+
+        // Star body
+        const sg = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.2, r * 0.1, cx, cy, r);
+        sg.addColorStop(0, "#FFFFFF"); sg.addColorStop(0.25, stage.starColor || "#F1C40F"); sg.addColorStop(0.8, (stage.starColor || "#F1C40F") + "AA"); sg.addColorStop(1, "transparent");
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = sg; ctx.fill();
+
+        // Onion layers for stage 3+
+        if (stageIdx >= 2 && stageIdx <= 4) {
+          const layers = stageIdx - 1;
+          const layerColors = ["#F1C40F88", "#E67E2288", "#E74C3C88", "#C0392B88"];
+          for (let l = 0; l < Math.min(layers, 4); l++) {
+            const lr = r - (l + 1) * (r / (layers + 2));
+            if (lr > 5) { ctx.beginPath(); ctx.arc(cx, cy, lr, 0, Math.PI * 2); ctx.strokeStyle = layerColors[l]; ctx.lineWidth = 1.5; ctx.stroke(); }
+          }
+        }
+
+        // Fusing particles
+        if (fusing) {
+          for (let i = 0; i < 12; i++) {
+            const pa = f * 0.08 + i * 0.55;
+            const pd = Math.sin(f * 0.06 + i * 2) * r * 0.4 + r * 0.2;
+            const px = cx + Math.cos(pa) * pd, py = cy + Math.sin(pa) * pd;
+            ctx.beginPath(); ctx.arc(px, py, 2 + Math.sin(f * 0.1 + i) * 1.5, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255,255,255,${0.4 + Math.sin(f * 0.12 + i) * 0.3})`; ctx.fill();
+          }
+        }
+
+        // Temperature indicator ring
+        if (temp > 0) {
+          const tFrac = Math.min(temp / 5000, 1);
+          ctx.beginPath();
+          ctx.arc(cx, cy, r + 12, -Math.PI / 2, -Math.PI / 2 + tFrac * Math.PI * 2);
+          ctx.strokeStyle = tFrac > 0.8 ? "#E74C3C" : tFrac > 0.4 ? "#F39C12" : "#F1C40F";
+          ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.stroke();
+        }
+      }
+      animId = requestAnimationFrame(draw);
+    }; draw(); return () => cancelAnimationFrame(animId);
+  }, [stageIdx, temp, fusing, collapsed, exploding, merging]);
+  return <canvas ref={canvasRef} width={300} height={300} style={{ width: 280, height: 280 }} />;
+}
+
+// ─── MAIN APP ───────────────────────────────────────────────────────────────
+
+function App() {
+  const [tab, setTab] = useState("forge");
+  const [loading, setLoading] = useState(true);
+  const [saveStatus, setSaveStatus] = useState(null); // null | "saving" | "saved"
+  const saveTimerRef = useRef(null);
+  // Forge
+  const [forgeStage, setForgeStage] = useState(0);
+  const [notes, setNotes] = useState({});
+  // Table
+  const [selectedElement, setSelectedElement] = useState(null);
+  const [originFilter, setOriginFilter] = useState(null);
+  const [bodyMode, setBodyMode] = useState(false);
+  // Lab
+  const [labStage, setLabStage] = useState(0);
+  const [labTemp, setLabTemp] = useState(0);
+  const [labFusing, setLabFusing] = useState(false);
+  const [labCollapsed, setLabCollapsed] = useState(false);
+  const [labExploding, setLabExploding] = useState(false);
+  const [labMerging, setLabMerging] = useState(false);
+  const [labCollection, setLabCollection] = useState(["H"]);
+  const [labMessage, setLabMessage] = useState(null);
+  const [labDone, setLabDone] = useState(false);
+  // Detective
+  const [detObj, setDetObj] = useState(0);
+  const [detAnswers, setDetAnswers] = useState({});
+  const [detRevealed, setDetRevealed] = useState({});
+  const [detScore, setDetScore] = useState(0);
+  // Worksheet
+  const [mcA, setMcA] = useState({});
+  const [sortA, setSortA] = useState({});
+  const [tfA, setTfA] = useState({});
+  const [fillA, setFillA] = useState({});
+  const [compA, setCompA] = useState({});
+  // Export
+  const [showExport, setShowExport] = useState(false);
+  const [studentName, setStudentName] = useState("");
+  const [studentPeriod, setStudentPeriod] = useState("");
+
+  // ─── LOAD SAVED PROGRESS ON MOUNT ───────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      const saved = await loadProgress();
+      if (saved) {
+        if (saved.notes) setNotes(saved.notes);
+        if (saved.labStage !== undefined) setLabStage(saved.labStage);
+        if (saved.labCollection) setLabCollection(saved.labCollection);
+        if (saved.labDone) setLabDone(saved.labDone);
+        if (saved.detAnswers) setDetAnswers(saved.detAnswers);
+        if (saved.detRevealed) setDetRevealed(saved.detRevealed);
+        if (saved.detScore !== undefined) setDetScore(saved.detScore);
+        if (saved.mcA) setMcA(saved.mcA);
+        if (saved.sortA) setSortA(saved.sortA);
+        if (saved.tfA) setTfA(saved.tfA);
+        if (saved.fillA) setFillA(saved.fillA);
+        if (saved.compA) setCompA(saved.compA);
+        if (saved.studentName) setStudentName(saved.studentName);
+        if (saved.studentPeriod) setStudentPeriod(saved.studentPeriod);
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  // ─── AUTO-SAVE ON STATE CHANGES (DEBOUNCED) ────────────────────────
+  const saveable = useMemo(() => ({
+    notes, labStage, labCollection, labDone, detAnswers, detRevealed, detScore,
+    mcA, sortA, tfA, fillA, compA, studentName, studentPeriod,
+  }), [notes, labStage, labCollection, labDone, detAnswers, detRevealed, detScore, mcA, sortA, tfA, fillA, compA, studentName, studentPeriod]);
+
+  useEffect(() => {
+    if (loading) return; // Don't save while loading
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSaveStatus("saving");
+    saveTimerRef.current = setTimeout(async () => {
+      await saveProgress(saveable);
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus(null), 2000);
+    }, SAVE_DELAY);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [saveable, loading]);
+
+  const handleClearProgress = useCallback(async () => {
+    if (!confirm("Clear ALL saved progress? This cannot be undone.")) return;
+    await clearProgress();
+    setNotes({}); setLabStage(0); setLabCollection(["H"]); setLabDone(false);
+    setLabTemp(0); setLabMessage(null);
+    setDetAnswers({}); setDetRevealed({}); setDetScore(0);
+    setMcA({}); setSortA({}); setTfA({}); setFillA({}); setCompA({});
+    setStudentName(""); setStudentPeriod("");
+    setSaveStatus(null);
+  }, []);
+
+  const sel = selectedElement ? ELEMENTS.find(e => e.sym === selectedElement) : null;
+
+  // ─── LAB FUNCTIONS ──────────────────────────────────────────────────
+
+  const currentLab = LAB_STAGES[labStage];
+  const canFuse = labStage < 5 && labTemp >= currentLab?.tempNeeded;
+
+  const handleFuse = () => {
+    if (labFusing || labCollapsed || labExploding || labMerging) return;
+    const s = LAB_STAGES[labStage];
+    if (s.isCrisis) {
+      // Iron crisis → collapse
+      setLabCollapsed(true);
+      setLabMessage("⚠️ Iron absorbs energy! The core is collapsing...");
+      setTimeout(() => {
+        setLabCollapsed(false); setLabStage(5); setLabTemp(0);
+        setLabMessage("The core has collapsed — triggering a SUPERNOVA!");
+      }, 2500);
+      return;
+    }
+    if (labTemp < s.tempNeeded) {
+      setLabMessage(`🌡️ Not hot enough! You need at least ${s.tempLabel}. Crank the temperature higher!`);
+      return;
+    }
+    setLabFusing(true);
+    setLabMessage(`⚡ Fusing ${s.fuelName}...`);
+    setTimeout(() => {
+      setLabFusing(false);
+      const newProducts = s.products.map(p => p.sym);
+      setLabCollection(prev => [...new Set([...prev, ...newProducts])]);
+      setLabMessage(`✨ Created: ${s.products.map(p => `${p.name} (${p.sym})`).join(", ")}!`);
+      if (labStage < LAB_STAGES.length - 1) {
+        setTimeout(() => { setLabStage(labStage + 1); setLabTemp(0); }, 1500);
+      }
+    }, 2000);
+  };
+
+  const handleDetonate = () => {
+    if (labExploding) return;
+    setLabExploding(true);
+    setLabMessage("💥 SUPERNOVA! The r-process is forging heavy elements...");
+    setTimeout(() => {
+      const newP = LAB_STAGES[5].products.map(p => p.sym);
+      setLabCollection(prev => [...new Set([...prev, ...newP])]);
+      setLabExploding(false);
+      setLabMessage("💫 Supernova complete! Heavy elements scattered into space.");
+      setTimeout(() => { setLabStage(6); setLabTemp(0); }, 1500);
+    }, 3500);
+  };
+
+  const handleMerge = () => {
+    if (labMerging) return;
+    setLabMerging(true);
+    setLabMessage("🔵 Neutron stars colliding... kilonova in progress!");
+    setTimeout(() => {
+      const newP = LAB_STAGES[6].products.map(p => p.sym);
+      setLabCollection(prev => [...new Set([...prev, ...newP])]);
+      setLabMerging(false);
+      setLabDone(true);
+      setLabMessage("🌟 Kilonova complete! You've forged every element from hydrogen to uranium!");
+    }, 3500);
+  };
+
+  const resetLab = () => {
+    setLabStage(0); setLabTemp(0); setLabFusing(false); setLabCollapsed(false);
+    setLabExploding(false); setLabMerging(false); setLabCollection(["H"]);
+    setLabMessage(null); setLabDone(false);
+  };
+
+  // ─── DETECTIVE ────────────────────────────────────────────────────────
+
+  const handleDetAnswer = (oi, ei, origin) => {
+    const key = `${oi}_${ei}`;
+    if (detAnswers[key] !== undefined) return;
+    const correct = DETECTIVE_OBJECTS[oi].elements[ei].origin === origin;
+    setDetAnswers(p => ({ ...p, [key]: { origin, correct } }));
+    if (correct) setDetScore(s => s + 1);
+  };
+  const allDetDone = (oi) => DETECTIVE_OBJECTS[oi].elements.every((_, ei) => detAnswers[`${oi}_${ei}`] !== undefined);
+
+  // ─── WORKSHEET SECTION COMPLETION ─────────────────────────────────────
+
+  const wsDone = useMemo(() => [
+    Object.keys(mcA).length === MC_QS.length,
+    SORT_ITEMS.every(i => sortA[i.element]),
+    Object.keys(tfA).length === TF_QS.length,
+    Object.values(fillA).filter(Boolean).length >= 4,
+    Object.values(compA).filter(Boolean).length >= 6,
+  ], [mcA, sortA, tfA, fillA, compA]);
+
+  const tabBtn = (id, label) => ({
+    padding: "8px 14px", border: "none", borderRadius: 8, cursor: "pointer",
+    fontWeight: 600, fontSize: 12, transition: "all 0.2s",
+    background: tab === id ? "linear-gradient(135deg, #E67E22, #E74C3C)" : "rgba(255,255,255,0.06)",
+    color: tab === id ? "#fff" : "#8899AA",
+    boxShadow: tab === id ? "0 4px 12px rgba(230,126,34,0.3)" : "none",
+  });
+
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #0a0a1a 0%, #1a0a0a 40%, #0a1a0a 100%)", color: "#ECF0F1", fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
+      {loading ? (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", gap: 12 }}>
+          <div style={{ fontSize: 40 }}>⭐</div>
+          <div style={{ fontSize: 16, color: "#F9E547", fontWeight: 600 }}>Loading your progress...</div>
+          <div style={{ fontSize: 12, color: "#556" }}>Retrieving saved work</div>
+        </div>
+      ) : (
+      <>
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none", zIndex: 0, background: "radial-gradient(1px 1px at 15% 25%, rgba(255,255,255,0.3), transparent), radial-gradient(1px 1px at 75% 15%, rgba(255,255,255,0.25), transparent), radial-gradient(1px 1px at 45% 65%, rgba(255,255,255,0.2), transparent)" }} />
+      <div style={{ position: "relative", zIndex: 1, maxWidth: 860, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", padding: "18px 16px 8px" }}>
+          <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, background: "linear-gradient(90deg, #F39C12, #E74C3C, #9B59B6, #3498DB)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>We Are Stardust</h1>
+          <p style={{ color: "#5568", fontSize: 12, margin: "3px 0 0" }}>Stellar Nucleosynthesis & the Cosmic Origin of Elements</p>
+        </div>
+        <div style={{ display: "flex", gap: 3, justifyContent: "center", padding: "0 10px 12px", flexWrap: "wrap", alignItems: "center" }}>
+          {[["forge", "🔥 Element Forge"], ["table", "🧪 Cosmic Table"], ["lab", "⚗️ Fusion Lab"], ["detective", "🔍 Detective"], ["worksheet", "📋 Worksheet"]].map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)} style={tabBtn(id, label)}>{label}</button>
+          ))}
+          <button onClick={() => setShowExport(true)} style={{ padding: "8px 14px", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: 12, background: "rgba(46,204,113,0.12)", color: "#2ECC71", marginLeft: 4 }} className="no-print">📄 Export</button>
+          <button onClick={handleClearProgress} style={{ padding: "8px 10px", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: 11, background: "rgba(231,76,60,0.08)", color: "#E74C3C55" }} className="no-print" title="Clear all saved progress">🗑️</button>
+          {saveStatus && <span className="no-print" style={{ fontSize: 11, color: saveStatus === "saving" ? "#F39C12" : "#2ECC71", fontWeight: 600, marginLeft: 2, transition: "opacity 0.3s", opacity: saveStatus ? 1 : 0 }}>{saveStatus === "saving" ? "💾 Saving…" : "✓ Saved"}</span>}
+        </div>
+
+        {/* ═══ ELEMENT FORGE ═══ */}
+        {tab === "forge" && (
+          <div style={{ padding: "0 16px 32px" }}>
+            <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: "16px 14px", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ display: "flex", gap: 3, justifyContent: "center", marginBottom: 12, flexWrap: "wrap" }}>
+                {FUSION_STAGES.map((s, i) => (
+                  <button key={i} onClick={() => setForgeStage(i)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid " + (forgeStage === i ? s.color : "rgba(255,255,255,0.06)"), background: forgeStage === i ? s.color + "22" : "rgba(255,255,255,0.03)", color: forgeStage === i ? s.color : "#445", cursor: "pointer", fontWeight: 600, fontSize: 11 }}>{s.name}</button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap", justifyContent: "center" }}>
+                <ForgeVisual stageIdx={forgeStage} size={200} />
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <h3 style={{ margin: "0 0 4px", color: FUSION_STAGES[forgeStage].color, fontSize: 17 }}>{FUSION_STAGES[forgeStage].name}</h3>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                    <span style={{ padding: "3px 8px", borderRadius: 5, background: "rgba(241,196,15,0.08)", fontSize: 11 }}><span style={{ color: "#F1C40F", fontWeight: 700 }}>TIME </span><span style={{ color: "#AAB" }}>{FUSION_STAGES[forgeStage].time}</span></span>
+                    <span style={{ padding: "3px 8px", borderRadius: 5, background: "rgba(231,76,60,0.08)", fontSize: 11 }}><span style={{ color: "#E74C3C", fontWeight: 700 }}>TEMP </span><span style={{ color: "#AAB" }}>{FUSION_STAGES[forgeStage].temp}</span></span>
+                  </div>
+                  <p style={{ color: "#889", fontSize: 13, lineHeight: 1.5, margin: "0 0 6px" }}>{FUSION_STAGES[forgeStage].description}</p>
+                  <div style={{ fontSize: 12, color: "#7AB" }}><strong style={{ color: FUSION_STAGES[forgeStage].color }}>Elements:</strong> {FUSION_STAGES[forgeStage].elements.join(", ")}</div>
+                </div>
+              </div>
+              {/* Note-catcher */}
+              <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#556" }}>📝 YOUR NOTES</span>
+                  <span style={{ fontSize: 10, color: "#2ECC71" }}>{Object.values(notes).filter(Boolean).length}/6 stages</span>
+                </div>
+                <textarea value={notes[forgeStage] || ""} onChange={e => setNotes({ ...notes, [forgeStage]: e.target.value })} placeholder={FUSION_STAGES[forgeStage].notePrompt} rows={2}
+                  style={{ width: "100%", padding: "8px 10px", borderRadius: 8, fontSize: 13, lineHeight: 1.4, background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)", color: "#ECF0F1", outline: "none", resize: "vertical", boxSizing: "border-box", fontFamily: "inherit" }} />
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 14 }}>
+                <button onClick={() => setForgeStage(Math.max(0, forgeStage - 1))} disabled={forgeStage === 0} style={{ padding: "8px 18px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: forgeStage === 0 ? "#223" : "#AAB", cursor: forgeStage === 0 ? "default" : "pointer", fontWeight: 600, fontSize: 14 }}>←</button>
+                {forgeStage < 5 ? <button onClick={() => setForgeStage(forgeStage + 1)} style={{ padding: "8px 22px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #E67E22, #E74C3C)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14 }}>Next →</button>
+                  : <button onClick={() => setForgeStage(0)} style={{ padding: "8px 22px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #9B59B6, #3498DB)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14 }}>🔄 Start Over</button>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ COSMIC TABLE ═══ */}
+        {tab === "table" && (
+          <div style={{ padding: "0 16px 32px" }}>
+            <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: "14px 10px", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ display: "flex", gap: 4, justifyContent: "center", marginBottom: 8, flexWrap: "wrap" }}>
+                <button onClick={() => { setOriginFilter(null); setBodyMode(false); }} style={{ padding: "4px 8px", borderRadius: 5, border: "1px solid " + (!originFilter && !bodyMode ? "#ECF0F1" : "rgba(255,255,255,0.08)"), background: !originFilter && !bodyMode ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.03)", color: !originFilter && !bodyMode ? "#ECF0F1" : "#445", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>All</button>
+                {Object.entries(ORIGINS).map(([k, o]) => (
+                  <button key={k} onClick={() => { setOriginFilter(k); setBodyMode(false); }} style={{ padding: "4px 8px", borderRadius: 5, border: "1px solid " + (originFilter === k ? o.color : "rgba(255,255,255,0.08)"), background: originFilter === k ? o.color + "22" : "rgba(255,255,255,0.03)", color: originFilter === k ? o.color : "#445", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>{o.icon} {o.short}</button>
+                ))}
+                <button onClick={() => { setBodyMode(!bodyMode); setOriginFilter(null); }} style={{ padding: "4px 8px", borderRadius: 5, border: "1px solid " + (bodyMode ? "#2ECC71" : "rgba(255,255,255,0.08)"), background: bodyMode ? "rgba(46,204,113,0.15)" : "rgba(255,255,255,0.03)", color: bodyMode ? "#2ECC71" : "#445", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>🧬 Body</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(18, 1fr)", gap: 2, marginBottom: 10 }}>
+                {Array.from({ length: 7 * 18 }, (_, idx) => {
+                  const row = Math.floor(idx / 18) + 1, col = (idx % 18) + 1;
+                  const el = ELEMENTS.find(e => e.row === row && e.col === col);
+                  if (!el) return <div key={idx} />;
+                  const ori = ORIGINS[el.origin]; const d = (originFilter && el.origin !== originFilter) || (bodyMode && !BODY_ELEMENTS.includes(el.sym)); const is = selectedElement === el.sym;
+                  return (<div key={el.sym} onClick={() => setSelectedElement(is ? null : el.sym)} style={{ aspectRatio: "1", borderRadius: 3, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: is ? ori.color + "44" : d ? "rgba(255,255,255,0.01)" : ori.color + "18", border: "1px solid " + (is ? ori.color : d ? "rgba(255,255,255,0.03)" : ori.color + "33"), opacity: d ? 0.2 : 1, transition: "all 0.2s" }}>
+                    <div style={{ fontSize: "min(2.2vw, 12px)", fontWeight: 800, color: is ? "#fff" : ori.color, lineHeight: 1 }}>{el.sym}</div>
+                    <div style={{ fontSize: "min(1vw, 6px)", color: "#556", lineHeight: 1 }}>{el.num}</div>
+                  </div>);
+                })}
+              </div>
+              {sel ? (
+                <div style={{ padding: "10px 14px", borderRadius: 10, background: ORIGINS[sel.origin].color + "0C", border: "1px solid " + ORIGINS[sel.origin].color + "33" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 44, height: 44, borderRadius: 8, background: ORIGINS[sel.origin].color + "22", border: "2px solid " + ORIGINS[sel.origin].color, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: ORIGINS[sel.origin].color }}>{sel.sym}</div><div style={{ fontSize: 8, color: "#778" }}>{sel.num}</div>
+                    </div>
+                    <div><h3 style={{ margin: 0, fontSize: 16, color: "#ECF0F1" }}>{sel.name}</h3><div style={{ fontSize: 11, color: ORIGINS[sel.origin].color, fontWeight: 600 }}>{ORIGINS[sel.origin].icon} {ORIGINS[sel.origin].name}</div></div>
+                  </div>
+                  <p style={{ fontSize: 12, color: "#8AB", lineHeight: 1.4, margin: "6px 0 0" }}><strong style={{ color: "#2ECC71" }}>Body:</strong> {sel.body}</p>
+                </div>
+              ) : <div style={{ padding: 10, borderRadius: 10, background: "rgba(255,255,255,0.03)", textAlign: "center", color: "#334", fontSize: 12 }}>Click any element to see its cosmic origin</div>}
+            </div>
+          </div>
+        )}
+
+        {/* ═══ FUSION LAB ═══ */}
+        {tab === "lab" && (
+          <div style={{ padding: "0 16px 32px" }}>
+            <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: "18px 14px", border: "1px solid rgba(255,255,255,0.08)" }}>
+              {labDone ? (
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 48, marginBottom: 10 }}>🌟</div>
+                  <h2 style={{ margin: "0 0 8px", color: "#F9E547", fontSize: 22 }}>Universe Complete!</h2>
+                  <p style={{ color: "#889", fontSize: 14, maxWidth: 400, margin: "0 auto 14px", lineHeight: 1.6 }}>You've traced the entire history of matter — from the Big Bang's hydrogen to a kilonova's gold. Every element in the universe was forged through these processes.</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "center", marginBottom: 16 }}>
+                    {labCollection.map(sym => { const el = ELEMENTS.find(e => e.sym === sym); const ori = el ? ORIGINS[el.origin] : ORIGINS.big_bang; return (
+                      <div key={sym} style={{ padding: "4px 10px", borderRadius: 6, background: (ori?.color || "#888") + "22", border: "1px solid " + (ori?.color || "#888") + "44", fontSize: 12, fontWeight: 700, color: ori?.color || "#888" }}>{sym}</div>
+                    ); })}
+                  </div>
+                  <button onClick={resetLab} style={{ padding: "12px 28px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #E67E22, #E74C3C)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 15 }}>🔄 Run the Universe Again</button>
+                </div>
+              ) : (
+                <div>
+                  {/* Stage header */}
+                  <div style={{ textAlign: "center", marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, color: "#556", fontWeight: 600 }}>STAGE {labStage + 1} / {LAB_STAGES.length}</div>
+                    <h3 style={{ margin: "2px 0", fontSize: 18, color: currentLab.starColor || "#F9E547" }}>{currentLab.name}</h3>
+                    <p style={{ color: "#778", fontSize: 13, margin: 0, lineHeight: 1.4 }}>{currentLab.description}</p>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 16, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
+                    {/* Reactor */}
+                    <ReactorVisual stageIdx={labStage} temp={labTemp} fusing={labFusing} collapsed={labCollapsed} exploding={labExploding} merging={labMerging} />
+
+                    {/* Controls panel */}
+                    <div style={{ minWidth: 200, flex: 1 }}>
+                      {/* Equation */}
+                      <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", marginBottom: 10, textAlign: "center" }}>
+                        <div style={{ fontSize: 11, color: "#556", fontWeight: 600, marginBottom: 2 }}>REACTION</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#ECF0F1", fontFamily: "monospace" }}>{currentLab.equation}</div>
+                      </div>
+
+                      {currentLab.fuel && !currentLab.isCrisis && (
+                        <div>
+                          {/* Temperature control */}
+                          <div style={{ marginBottom: 12 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                              <span style={{ fontSize: 11, color: "#667", fontWeight: 600 }}>🌡️ CORE TEMPERATURE</span>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: labTemp >= currentLab.tempNeeded ? "#2ECC71" : "#F1C40F" }}>
+                                {labTemp < 1000 ? labTemp + "M K" : (labTemp / 1000).toFixed(1) + "B K"}
+                              </span>
+                            </div>
+                            <input type="range" min={0} max={5000} value={labTemp} onChange={e => setLabTemp(Number(e.target.value))}
+                              style={{ width: "100%", accentColor: labTemp >= currentLab.tempNeeded ? "#2ECC71" : "#E67E22" }} />
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#445" }}>
+                              <span>0</span>
+                              <span style={{ color: labTemp >= currentLab.tempNeeded ? "#2ECC71" : "#F39C12", fontWeight: 700 }}>Need: {currentLab.tempLabel}</span>
+                              <span>5B K</span>
+                            </div>
+                          </div>
+
+                          {/* Fuse button */}
+                          <button onClick={handleFuse} disabled={labFusing}
+                            style={{
+                              width: "100%", padding: "14px 20px", borderRadius: 12, border: "none",
+                              background: canFuse ? "linear-gradient(135deg, #2ECC71, #27AE60)" : labFusing ? "rgba(241,196,15,0.2)" : "rgba(255,255,255,0.06)",
+                              color: canFuse ? "#fff" : labFusing ? "#F1C40F" : "#445",
+                              cursor: labFusing ? "wait" : "pointer", fontWeight: 800, fontSize: 16,
+                              boxShadow: canFuse ? "0 4px 20px rgba(46,204,113,0.4)" : "none",
+                              transition: "all 0.3s", transform: canFuse ? "scale(1)" : "scale(0.98)",
+                            }}>
+                            {labFusing ? "⚡ FUSING..." : canFuse ? `🔥 FUSE ${currentLab.fuelName}!` : `Load ${currentLab.fuelName} & Heat`}
+                          </button>
+                        </div>
+                      )}
+
+                      {currentLab.isCrisis && (
+                        <button onClick={handleFuse} disabled={labCollapsed}
+                          style={{ width: "100%", padding: "14px 20px", borderRadius: 12, border: "2px solid #E74C3C", background: labCollapsed ? "rgba(231,76,60,0.2)" : "rgba(231,76,60,0.1)", color: "#E74C3C", cursor: labCollapsed ? "wait" : "pointer", fontWeight: 800, fontSize: 16 }}>
+                          {labCollapsed ? "💀 COLLAPSING..." : "⚠️ Try to Fuse Iron..."}
+                        </button>
+                      )}
+
+                      {currentLab.isExplosion && (
+                        <button onClick={handleDetonate} disabled={labExploding}
+                          style={{ width: "100%", padding: "14px 20px", borderRadius: 12, border: "none", background: labExploding ? "rgba(155,89,182,0.2)" : "linear-gradient(135deg, #9B59B6, #8E44AD)", color: "#fff", cursor: labExploding ? "wait" : "pointer", fontWeight: 800, fontSize: 16, boxShadow: "0 4px 20px rgba(155,89,182,0.4)" }}>
+                          {labExploding ? "💥 EXPLODING..." : "💥 DETONATE SUPERNOVA"}
+                        </button>
+                      )}
+
+                      {currentLab.isMerger && (
+                        <button onClick={handleMerge} disabled={labMerging}
+                          style={{ width: "100%", padding: "14px 20px", borderRadius: 12, border: "none", background: labMerging ? "rgba(52,152,219,0.2)" : "linear-gradient(135deg, #3498DB, #2980B9)", color: "#fff", cursor: labMerging ? "wait" : "pointer", fontWeight: 800, fontSize: 16, boxShadow: "0 4px 20px rgba(52,152,219,0.4)" }}>
+                          {labMerging ? "🔵 MERGING..." : "🔵 COLLIDE NEUTRON STARS"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Message */}
+                  {labMessage && (
+                    <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(52,152,219,0.08)", border: "1px solid rgba(52,152,219,0.2)", textAlign: "center", fontSize: 14, color: "#ACD", fontWeight: 600 }}>
+                      {labMessage}
+                    </div>
+                  )}
+
+                  {/* Fun fact */}
+                  <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: "rgba(241,196,15,0.06)", border: "1px solid rgba(241,196,15,0.1)", fontSize: 12, color: "#997", textAlign: "center" }}>
+                    💡 {currentLab.fact}
+                  </div>
+
+                  {/* Collection */}
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#556", marginBottom: 4 }}>🧪 YOUR ELEMENT COLLECTION ({labCollection.length} elements)</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+                      {labCollection.map(sym => {
+                        const el = ELEMENTS.find(e => e.sym === sym); const ori = el ? ORIGINS[el.origin] : ORIGINS.big_bang;
+                        return <div key={sym} style={{ padding: "3px 8px", borderRadius: 5, background: (ori?.color || "#888") + "18", border: "1px solid " + (ori?.color || "#888") + "33", fontSize: 11, fontWeight: 700, color: ori?.color || "#888" }}>{sym}</div>;
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ═══ STARDUST DETECTIVE ═══ */}
+        {tab === "detective" && (
+          <div style={{ padding: "0 16px 32px" }}>
+            <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: "18px 14px", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <h2 style={{ textAlign: "center", margin: "0 0 4px", fontSize: 18, color: "#F9E547" }}>🔍 Stardust Detective</h2>
+              <p style={{ textAlign: "center", color: "#556", fontSize: 12, marginBottom: 12 }}>Investigate everyday objects — identify the cosmic origin of each element inside.</p>
+              <div style={{ display: "flex", gap: 5, justifyContent: "center", marginBottom: 14, flexWrap: "wrap" }}>
+                {DETECTIVE_OBJECTS.map((obj, i) => {
+                  const done = allDetDone(i);
+                  return <button key={i} onClick={() => setDetObj(i)} style={{ padding: "6px 12px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600, border: "1px solid " + (detObj === i ? "#F9E547" : done ? "rgba(46,204,113,0.3)" : "rgba(255,255,255,0.08)"), background: detObj === i ? "rgba(249,229,71,0.1)" : done ? "rgba(46,204,113,0.06)" : "rgba(255,255,255,0.03)", color: detObj === i ? "#F9E547" : done ? "#2ECC71" : "#667" }}>{obj.icon} {obj.name}{done && " ✓"}</button>;
+                })}
+              </div>
+              {(() => {
+                const obj = DETECTIVE_OBJECTS[detObj]; const done = allDetDone(detObj); const rev = detRevealed[detObj];
+                return (
+                  <div>
+                    <div style={{ textAlign: "center", marginBottom: 12 }}>
+                      <div style={{ fontSize: 40, marginBottom: 4 }}>{obj.icon}</div>
+                      <h3 style={{ margin: "0 0 3px", fontSize: 17, color: "#ECF0F1" }}>{obj.name}</h3>
+                      <p style={{ color: "#778", fontSize: 13, margin: 0 }}>{obj.description}</p>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+                      {obj.elements.map((el, ei) => {
+                        const k = `${detObj}_${ei}`; const a = detAnswers[k]; const ans = a !== undefined; const correct = ans && a.correct;
+                        return (
+                          <div key={ei} style={{ padding: "10px 12px", borderRadius: 10, background: ans ? (correct ? "rgba(46,204,113,0.08)" : "rgba(231,76,60,0.08)") : "rgba(255,255,255,0.03)", border: "1px solid " + (ans ? (correct ? "rgba(46,204,113,0.25)" : "rgba(231,76,60,0.25)") : "rgba(255,255,255,0.06)") }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                              <div style={{ width: 34, height: 34, borderRadius: 7, background: ORIGINS[el.origin].color + "18", border: "1px solid " + ORIGINS[el.origin].color + "44", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: ORIGINS[el.origin].color }}>{el.sym}</div>
+                              <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 700, color: "#ECF0F1" }}>{el.name}</div><div style={{ fontSize: 11, color: "#667" }}>{el.role}</div></div>
+                              {ans && <span style={{ fontSize: 13, color: correct ? "#2ECC71" : "#E74C3C", fontWeight: 700 }}>{correct ? "✓" : "✗"}</span>}
+                            </div>
+                            {!ans ? (
+                              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                {Object.entries(ORIGINS).map(([ok, o]) => (
+                                  <button key={ok} onClick={() => handleDetAnswer(detObj, ei, ok)} style={{ padding: "5px 10px", borderRadius: 5, border: "1px solid " + o.color + "44", background: o.color + "10", color: o.color, cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{o.icon} {o.short}</button>
+                                ))}
+                              </div>
+                            ) : !correct && <div style={{ fontSize: 11, color: "#E74C3C" }}>Answer: <strong style={{ color: "#2ECC71" }}>{ORIGINS[el.origin].icon} {ORIGINS[el.origin].name}</strong></div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {done && !rev && <div style={{ textAlign: "center" }}><button onClick={() => setDetRevealed(p => ({ ...p, [detObj]: true }))} style={{ padding: "10px 22px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #9B59B6, #3498DB)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14 }}>🔍 Reveal the Full Story</button></div>}
+                    {rev && <div style={{ padding: "12px 16px", borderRadius: 10, background: "linear-gradient(135deg, rgba(52,152,219,0.1), rgba(155,89,182,0.1))", border: "1px solid rgba(52,152,219,0.2)", fontSize: 13, color: "#ACD", lineHeight: 1.5 }}><strong style={{ color: "#5DADE2" }}>The cosmic story:</strong> {obj.reveal}</div>}
+                  </div>
+                );
+              })()}
+              <div style={{ marginTop: 10, textAlign: "center", fontSize: 12, color: "#556" }}>
+                Correct: <strong style={{ color: "#2ECC71" }}>{detScore}</strong> / {DETECTIVE_OBJECTS.reduce((s, o) => s + o.elements.length, 0)}
+                {detScore === DETECTIVE_OBJECTS.reduce((s, o) => s + o.elements.length, 0) && <span style={{ color: "#F9E547", fontWeight: 700 }}> — Master Detective! 🌟</span>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ WORKSHEET ═══ */}
+        {tab === "worksheet" && (
+          <div>
+            {/* Progress */}
+            <div style={{ position: "sticky", top: 0, zIndex: 10, padding: "8px 16px", background: "rgba(10,10,26,0.95)", backdropFilter: "blur(10px)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ fontSize: 12, color: "#556", fontWeight: 600 }}>Worksheet Progress</span>
+                <span style={{ fontSize: 12, color: wsDone.every(Boolean) ? "#2ECC71" : "#F1C40F", fontWeight: 700 }}>{wsDone.filter(Boolean).length}/5{wsDone.every(Boolean) && " — Complete! 🌟"}</span>
+              </div>
+              <div style={{ height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2 }}>
+                <div style={{ height: "100%", borderRadius: 2, transition: "width 0.5s", width: (wsDone.filter(Boolean).length / 5) * 100 + "%", background: wsDone.every(Boolean) ? "#2ECC71" : "linear-gradient(90deg, #E67E22, #E74C3C)" }} />
+              </div>
+            </div>
+
+            <div style={{ padding: "16px 16px 40px", display: "flex", flexDirection: "column", gap: 24 }}>
+              <div style={{ padding: "12px 14px", borderRadius: 10, background: "linear-gradient(135deg, rgba(230,126,34,0.08), rgba(231,76,60,0.08))", border: "1px solid rgba(230,126,34,0.15)", fontSize: 13, color: "#8AB", lineHeight: 1.4 }}>
+                Complete all 5 sections. Use the other tabs as reference!
+              </div>
+
+              {/* S1: Multiple Choice */}
+              <div>
+                <SectionHeader number="1" title="Multiple Choice" icon="🎯" subtitle="Select the best answer" />
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {MC_QS.map((q, qi) => {
+                    const ans = mcA[qi] !== undefined, cor = ans && mcA[qi] === q.a;
+                    return (<div key={qi} style={{ padding: 12, borderRadius: 10, background: ans ? (cor ? "rgba(46,204,113,0.08)" : "rgba(231,76,60,0.08)") : "rgba(255,255,255,0.03)", border: "1px solid " + (ans ? (cor ? "rgba(46,204,113,0.3)" : "rgba(231,76,60,0.3)") : "rgba(255,255,255,0.06)") }}>
+                      <p style={{ margin: "0 0 8px", fontSize: 14, color: "#CDD", fontWeight: 600 }}>{qi + 1}. {q.q}</p>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
+                        {q.opts.map((o, oi) => {
+                          const ic = oi === q.a, ch = mcA[qi] === oi;
+                          let bg = "rgba(255,255,255,0.04)", bc = "rgba(255,255,255,0.08)", cl = "#99A";
+                          if (ans) { if (ic) { bg = "rgba(46,204,113,0.15)"; bc = "#2ECC71"; cl = "#2ECC71"; } else if (ch) { bg = "rgba(231,76,60,0.12)"; bc = "#E74C3C"; cl = "#E74C3C"; } }
+                          return <button key={oi} onClick={() => { if (mcA[qi] === undefined) setMcA({ ...mcA, [qi]: oi }); }} style={{ padding: "8px 12px", borderRadius: 7, border: "1px solid " + bc, background: bg, color: cl, cursor: ans ? "default" : "pointer", fontSize: 13, textAlign: "left" }}><span style={{ fontWeight: 700, opacity: 0.5, marginRight: 6 }}>{String.fromCharCode(65 + oi)}</span>{o}{ans && ic && " ✓"}</button>;
+                        })}
+                      </div>
+                    </div>);
+                  })}
+                </div>
+              </div>
+
+              <div style={{ height: 1, background: "rgba(255,255,255,0.04)" }} />
+
+              {/* S2: Sort */}
+              <div>
+                <SectionHeader number="2" title="Sort the Elements" icon="🧪" subtitle="Drag each element to the process that created it" />
+                {(() => {
+                  const [sortChecked, setSortChecked] = [false, () => {}]; // We'll use local checked state
+                  return <SortWidget answers={sortA} setAnswers={setSortA} />;
+                })()}
+              </div>
+
+              <div style={{ height: 1, background: "rgba(255,255,255,0.04)" }} />
+
+              {/* S3: True/False */}
+              <div>
+                <SectionHeader number="3" title="True or False" icon="⚖️" subtitle="Then read the explanation" />
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {TF_QS.map((q, qi) => {
+                    const ans = tfA[qi] !== undefined, cor = ans && tfA[qi] === q.a;
+                    return (<div key={qi} style={{ padding: "12px 14px", borderRadius: 10, background: ans ? (cor ? "rgba(46,204,113,0.08)" : "rgba(231,76,60,0.08)") : "rgba(255,255,255,0.03)", border: "1px solid " + (ans ? (cor ? "rgba(46,204,113,0.25)" : "rgba(231,76,60,0.25)") : "rgba(255,255,255,0.06)") }}>
+                      <p style={{ margin: "0 0 8px", fontSize: 13, color: "#CDD", lineHeight: 1.4 }}>{qi + 1}. "{q.s}"</p>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {[true, false].map(v => {
+                          const it = tfA[qi] === v, ca = q.a === v;
+                          let bg = "rgba(255,255,255,0.04)", bc = "rgba(255,255,255,0.08)", cl = "#889";
+                          if (ans && ca) { bg = "rgba(46,204,113,0.15)"; bc = "#2ECC71"; cl = "#2ECC71"; }
+                          else if (ans && it && !cor) { bg = "rgba(231,76,60,0.12)"; bc = "#E74C3C"; cl = "#E74C3C"; }
+                          return <button key={String(v)} onClick={() => { if (tfA[qi] === undefined) setTfA({ ...tfA, [qi]: v }); }} style={{ padding: "7px 18px", borderRadius: 7, border: "1px solid " + bc, background: bg, color: cl, cursor: ans ? "default" : "pointer", fontSize: 13, fontWeight: 600 }}>{v ? "TRUE" : "FALSE"}{ans && ca && " ✓"}</button>;
+                        })}
+                      </div>
+                      {ans && <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 7, background: "rgba(52,152,219,0.08)", border: "1px solid rgba(52,152,219,0.15)", fontSize: 12, color: "#8AB", lineHeight: 1.4 }}><strong style={{ color: "#5DADE2" }}>Why:</strong> {q.why}</div>}
+                    </div>);
+                  })}
+                </div>
+              </div>
+
+              <div style={{ height: 1, background: "rgba(255,255,255,0.04)" }} />
+
+              {/* S4: Fill in */}
+              <div>
+                <SectionHeader number="4" title="Fill in the Blank" icon="🏷️" subtitle="Type the correct term" />
+                <FillInWidget answers={fillA} setAnswers={setFillA} />
+              </div>
+
+              <div style={{ height: 1, background: "rgba(255,255,255,0.04)" }} />
+
+              {/* S5: Compare */}
+              <div>
+                <SectionHeader number="5" title="Compare & Contrast" icon="🔍" subtitle="Stellar fusion vs. explosive nucleosynthesis" />
+                <CompareWidget answers={compA} setAnswers={setCompA} />
+              </div>
+
+              {wsDone.every(Boolean) && (
+                <div style={{ padding: "16px 20px", borderRadius: 14, textAlign: "center", background: "linear-gradient(135deg, rgba(46,204,113,0.12), rgba(230,126,34,0.12))", border: "1px solid rgba(46,204,113,0.3)" }}>
+                  <div style={{ fontSize: 32, marginBottom: 6 }}>🌟</div>
+                  <h3 style={{ margin: "0 0 4px", color: "#2ECC71", fontSize: 18 }}>Worksheet Complete!</h3>
+                  <p style={{ color: "#8AB", fontSize: 13, margin: 0 }}>You understand how the universe built every element — including you.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <p style={{ textAlign: "center", color: "#223", fontSize: 10, padding: "0 0 16px" }} className="no-print">Element origins simplified for instructional purposes</p>
+
+        {/* ═══ EXPORT OVERLAY ═══ */}
+        {showExport && (
+          <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 100, background: "rgba(0,0,0,0.85)", overflow: "auto" }}>
+            <div className="no-print" style={{ position: "sticky", top: 0, zIndex: 101, background: "rgba(10,10,26,0.95)", padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.1)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, backdropFilter: "blur(10px)" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <input type="text" value={studentName} onChange={e => setStudentName(e.target.value)} placeholder="Your Name" style={{ padding: "6px 12px", borderRadius: 6, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "#ECF0F1", fontSize: 13, width: 160, outline: "none" }} />
+                <input type="text" value={studentPeriod} onChange={e => setStudentPeriod(e.target.value)} placeholder="Period" style={{ padding: "6px 12px", borderRadius: 6, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "#ECF0F1", fontSize: 13, width: 80, outline: "none" }} />
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => window.print()} style={{ padding: "8px 20px", borderRadius: 8, border: "none", background: "linear-gradient(135deg, #2ECC71, #27AE60)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13, boxShadow: "0 4px 12px rgba(46,204,113,0.3)" }}>🖨️ Print / Save as PDF</button>
+                <button onClick={() => setShowExport(false)} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.06)", color: "#AAB", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>✕ Close</button>
+              </div>
+            </div>
+
+            {/* Printable content */}
+            <div id="printable-report" style={{ maxWidth: 720, margin: "0 auto", padding: "24px 32px 40px", background: "#fff", color: "#222", fontFamily: "Arial, sans-serif", minHeight: "100vh" }}>
+              {/* Header */}
+              <div style={{ borderBottom: "3px solid #C0392B", paddingBottom: 12, marginBottom: 16 }}>
+                <h1 style={{ margin: 0, fontSize: 22, color: "#4A1A0A" }}>We Are Stardust — Student Work Report</h1>
+                <p style={{ margin: "4px 0 0", fontSize: 13, color: "#C0392B" }}>Stellar Nucleosynthesis & the Cosmic Origin of Elements</p>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 13 }}>
+                  <span><strong>Name:</strong> {studentName || "________________________"}</span>
+                  <span><strong>Period:</strong> {studentPeriod || "______"}</span>
+                  <span><strong>Date:</strong> {new Date().toLocaleDateString()}</span>
+                </div>
+              </div>
+
+              {/* Section 1: Forge Notes */}
+              <div style={{ marginBottom: 20 }}>
+                <h2 style={{ fontSize: 16, color: "#C0392B", borderBottom: "1px solid #ddd", paddingBottom: 4, margin: "0 0 10px" }}>1. Element Forge — Stage Notes</h2>
+                {FUSION_STAGES.map((s, i) => (
+                  <div key={i} style={{ marginBottom: 8, padding: "6px 10px", background: notes[i] ? "#f9f9f9" : "#fff5f5", borderRadius: 4, border: "1px solid " + (notes[i] ? "#e0e0e0" : "#f0d0d0") }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 2 }}>{s.name} <span style={{ fontWeight: 400, color: "#999" }}>({s.temp}, {s.time})</span></div>
+                    <div style={{ fontSize: 13, color: notes[i] ? "#333" : "#c0392b", fontStyle: notes[i] ? "normal" : "italic", minHeight: 16 }}>
+                      {notes[i] || "No notes recorded"}
+                    </div>
+                  </div>
+                ))}
+                <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>{Object.values(notes).filter(Boolean).length} / 6 stages completed</div>
+              </div>
+
+              {/* Section 2: Fusion Lab */}
+              <div style={{ marginBottom: 20 }}>
+                <h2 style={{ fontSize: 16, color: "#C0392B", borderBottom: "1px solid #ddd", paddingBottom: 4, margin: "0 0 10px" }}>2. Fusion Lab — Element Collection</h2>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: labDone ? "#27ae60" : "#e67e22" }}>{labDone ? "✓ Complete — all stages finished" : `In progress — ${labCollection.length} elements collected`}</span>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {labCollection.map(sym => {
+                    const el = ELEMENTS.find(e => e.sym === sym);
+                    return <span key={sym} style={{ padding: "2px 8px", borderRadius: 4, background: "#f0f0f0", border: "1px solid #ddd", fontSize: 12, fontWeight: 600 }}>{sym}{el ? ` (${el.name})` : ""}</span>;
+                  })}
+                </div>
+              </div>
+
+              {/* Section 3: Stardust Detective */}
+              <div style={{ marginBottom: 20 }}>
+                <h2 style={{ fontSize: 16, color: "#C0392B", borderBottom: "1px solid #ddd", paddingBottom: 4, margin: "0 0 10px" }}>3. Stardust Detective — Investigations</h2>
+                {DETECTIVE_OBJECTS.map((obj, oi) => {
+                  const objDone = obj.elements.every((_, ei) => detAnswers[`${oi}_${ei}`] !== undefined);
+                  const objCorrect = obj.elements.filter((_, ei) => detAnswers[`${oi}_${ei}`]?.correct).length;
+                  return (
+                    <div key={oi} style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 4, border: "1px solid #e0e0e0", background: objDone ? "#f9fff9" : "#fff" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{obj.icon} {obj.name} {objDone && <span style={{ color: "#27ae60", fontWeight: 400 }}>({objCorrect}/{obj.elements.length} correct)</span>}</div>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                        <thead><tr style={{ background: "#f5f5f5" }}>
+                          <th style={{ padding: "3px 6px", textAlign: "left", borderBottom: "1px solid #ddd" }}>Element</th>
+                          <th style={{ padding: "3px 6px", textAlign: "left", borderBottom: "1px solid #ddd" }}>Role</th>
+                          <th style={{ padding: "3px 6px", textAlign: "left", borderBottom: "1px solid #ddd" }}>Student Answer</th>
+                          <th style={{ padding: "3px 6px", textAlign: "left", borderBottom: "1px solid #ddd" }}>Correct</th>
+                        </tr></thead>
+                        <tbody>{obj.elements.map((el, ei) => {
+                          const a = detAnswers[`${oi}_${ei}`];
+                          return (<tr key={ei}>
+                            <td style={{ padding: "3px 6px", borderBottom: "1px solid #eee", fontWeight: 600 }}>{el.sym} ({el.name})</td>
+                            <td style={{ padding: "3px 6px", borderBottom: "1px solid #eee" }}>{el.role}</td>
+                            <td style={{ padding: "3px 6px", borderBottom: "1px solid #eee", color: a?.correct ? "#27ae60" : a ? "#c0392b" : "#999" }}>{a ? ORIGINS[a.origin]?.name : "—"} {a?.correct ? "✓" : a ? "✗" : ""}</td>
+                            <td style={{ padding: "3px 6px", borderBottom: "1px solid #eee" }}>{ORIGINS[el.origin]?.name}</td>
+                          </tr>);
+                        })}</tbody>
+                      </table>
+                    </div>
+                  );
+                })}
+                <div style={{ fontSize: 11, color: "#888" }}>Total: {detScore} / {DETECTIVE_OBJECTS.reduce((s, o) => s + o.elements.length, 0)} correct</div>
+              </div>
+
+              {/* Section 4: Worksheet — MC */}
+              <div style={{ marginBottom: 20 }}>
+                <h2 style={{ fontSize: 16, color: "#C0392B", borderBottom: "1px solid #ddd", paddingBottom: 4, margin: "0 0 10px" }}>4. Worksheet Responses</h2>
+
+                <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 6px", color: "#555" }}>Multiple Choice</h3>
+                {MC_QS.map((q, qi) => {
+                  const ans = mcA[qi]; const correct = ans === q.a;
+                  return (<div key={qi} style={{ marginBottom: 6, fontSize: 12, padding: "4px 8px", background: ans !== undefined ? (correct ? "#f0fff0" : "#fff5f5") : "#fff", border: "1px solid #eee", borderRadius: 3 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 2 }}>{qi + 1}. {q.q}</div>
+                    <div>Answer: {ans !== undefined ? <span style={{ color: correct ? "#27ae60" : "#c0392b" }}>{q.opts[ans]} {correct ? "✓" : `✗ (correct: ${q.opts[q.a]})`}</span> : <span style={{ color: "#999", fontStyle: "italic" }}>Not answered</span>}</div>
+                  </div>);
+                })}
+                <div style={{ fontSize: 11, color: "#888", marginBottom: 12 }}>Score: {Object.entries(mcA).filter(([k, v]) => v === MC_QS[k].a).length} / {MC_QS.length}</div>
+
+                <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 6px", color: "#555" }}>Sort the Elements</h3>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 12 }}>
+                  <thead><tr style={{ background: "#f5f5f5" }}>
+                    <th style={{ padding: "3px 6px", textAlign: "left", borderBottom: "1px solid #ddd" }}>Element</th>
+                    <th style={{ padding: "3px 6px", textAlign: "left", borderBottom: "1px solid #ddd" }}>Student Placed In</th>
+                    <th style={{ padding: "3px 6px", textAlign: "left", borderBottom: "1px solid #ddd" }}>Correct Origin</th>
+                    <th style={{ padding: "3px 6px", textAlign: "center", borderBottom: "1px solid #ddd" }}></th>
+                  </tr></thead>
+                  <tbody>{SORT_ITEMS.map((item, i) => {
+                    const placed = sortA[item.element]; const correct = placed === item.origin;
+                    return (<tr key={i}>
+                      <td style={{ padding: "3px 6px", borderBottom: "1px solid #eee", fontWeight: 600 }}>{item.element}</td>
+                      <td style={{ padding: "3px 6px", borderBottom: "1px solid #eee", color: placed ? (correct ? "#27ae60" : "#c0392b") : "#999" }}>{placed ? ORIGINS[placed]?.name : "—"}</td>
+                      <td style={{ padding: "3px 6px", borderBottom: "1px solid #eee" }}>{ORIGINS[item.origin]?.name}</td>
+                      <td style={{ padding: "3px 6px", borderBottom: "1px solid #eee", textAlign: "center" }}>{placed ? (correct ? "✓" : "✗") : ""}</td>
+                    </tr>);
+                  })}</tbody>
+                </table>
+
+                <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 6px", color: "#555" }}>True or False</h3>
+                {TF_QS.map((q, qi) => {
+                  const ans = tfA[qi]; const correct = ans === q.a;
+                  return (<div key={qi} style={{ marginBottom: 6, fontSize: 12, padding: "4px 8px", background: ans !== undefined ? (correct ? "#f0fff0" : "#fff5f5") : "#fff", border: "1px solid #eee", borderRadius: 3 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 2 }}>"{q.s}"</div>
+                    <div>Answer: {ans !== undefined ? <span style={{ color: correct ? "#27ae60" : "#c0392b" }}>{ans ? "True" : "False"} {correct ? "✓" : `✗ (correct: ${q.a ? "True" : "False"})`}</span> : <span style={{ color: "#999", fontStyle: "italic" }}>Not answered</span>}</div>
+                  </div>);
+                })}
+                <div style={{ fontSize: 11, color: "#888", marginBottom: 12 }}>Score: {Object.entries(tfA).filter(([k, v]) => v === TF_QS[k].a).length} / {TF_QS.length}</div>
+
+                <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 6px", color: "#555" }}>Fill in the Blank</h3>
+                {[
+                  { clue: "Heaviest element from stellar fusion", answer: "Iron" },
+                  { clue: "Process powering stars", answer: "Nuclear fusion" },
+                  { clue: "Neutron star collision event", answer: "Kilonova" },
+                  { clue: "Rapid neutron capture process", answer: "R-process" },
+                  { clue: "Most abundant body element from Big Bang", answer: "Hydrogen" },
+                  { clue: "Particles that create Li, Be, B", answer: "Cosmic rays" },
+                ].map((item, i) => (
+                  <div key={i} style={{ marginBottom: 4, fontSize: 12, padding: "3px 8px", border: "1px solid #eee", borderRadius: 3 }}>
+                    <span style={{ color: "#555" }}>{item.clue}: </span>
+                    <span style={{ fontWeight: 600 }}>{fillA[i] || <span style={{ color: "#999", fontStyle: "italic", fontWeight: 400 }}>blank</span>}</span>
+                    <span style={{ color: "#888", fontSize: 11 }}> (answer: {item.answer})</span>
+                  </div>
+                ))}
+
+                <h3 style={{ fontSize: 13, fontWeight: 700, margin: "12px 0 6px", color: "#555" }}>Compare & Contrast</h3>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead><tr style={{ background: "#f5f5f5" }}>
+                    <th style={{ padding: "3px 6px", textAlign: "left", borderBottom: "1px solid #ddd" }}>Category</th>
+                    <th style={{ padding: "3px 6px", textAlign: "left", borderBottom: "1px solid #ddd" }}>Stellar Fusion (student)</th>
+                    <th style={{ padding: "3px 6px", textAlign: "left", borderBottom: "1px solid #ddd" }}>Explosive (student)</th>
+                  </tr></thead>
+                  <tbody>{COMPARE_CATS.map((cat, i) => (
+                    <tr key={i}>
+                      <td style={{ padding: "3px 6px", borderBottom: "1px solid #eee", fontWeight: 600 }}>{cat}</td>
+                      <td style={{ padding: "3px 6px", borderBottom: "1px solid #eee" }}>{compA["s_" + i] || <span style={{ color: "#999", fontStyle: "italic" }}>blank</span>}</td>
+                      <td style={{ padding: "3px 6px", borderBottom: "1px solid #eee" }}>{compA["e_" + i] || <span style={{ color: "#999", fontStyle: "italic" }}>blank</span>}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+                <div style={{ fontSize: 10, color: "#bbb", marginTop: 6 }}>Reference answers — Stellar: {COMPARE_S.join(" | ")} | Explosive: {COMPARE_E.join(" | ")}</div>
+              </div>
+
+              {/* Completion Summary */}
+              <div style={{ borderTop: "2px solid #C0392B", paddingTop: 12, marginTop: 20 }}>
+                <h2 style={{ fontSize: 16, color: "#4A1A0A", margin: "0 0 8px" }}>Completion Summary</h2>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <tbody>
+                    {[
+                      ["Forge Notes", `${Object.values(notes).filter(Boolean).length} / 6 stages`, Object.values(notes).filter(Boolean).length === 6],
+                      ["Fusion Lab", labDone ? "Complete" : `${labCollection.length} elements collected`, labDone],
+                      ["Stardust Detective", `${detScore} / ${DETECTIVE_OBJECTS.reduce((s, o) => s + o.elements.length, 0)} correct`, detScore === DETECTIVE_OBJECTS.reduce((s, o) => s + o.elements.length, 0)],
+                      ["Worksheet — MC", `${Object.entries(mcA).filter(([k, v]) => v === MC_QS[k].a).length} / ${MC_QS.length}`, Object.keys(mcA).length === MC_QS.length],
+                      ["Worksheet — Sort", `${SORT_ITEMS.filter(i => sortA[i.element] === i.origin).length} / ${SORT_ITEMS.length}`, SORT_ITEMS.every(i => sortA[i.element])],
+                      ["Worksheet — T/F", `${Object.entries(tfA).filter(([k, v]) => v === TF_QS[k].a).length} / ${TF_QS.length}`, Object.keys(tfA).length === TF_QS.length],
+                      ["Worksheet — Fill-in", `${Object.values(fillA).filter(Boolean).length} / 6 answered`, Object.values(fillA).filter(Boolean).length >= 4],
+                      ["Worksheet — Compare", `${Object.values(compA).filter(Boolean).length} / 10 cells`, Object.values(compA).filter(Boolean).length >= 6],
+                    ].map(([label, status, done], i) => (
+                      <tr key={i}>
+                        <td style={{ padding: "4px 8px", borderBottom: "1px solid #eee", fontWeight: 600 }}>{label}</td>
+                        <td style={{ padding: "4px 8px", borderBottom: "1px solid #eee" }}>{status}</td>
+                        <td style={{ padding: "4px 8px", borderBottom: "1px solid #eee", textAlign: "center", color: done ? "#27ae60" : "#e67e22", fontWeight: 700 }}>{done ? "✓" : "…"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <p style={{ fontSize: 10, color: "#bbb", textAlign: "center", marginTop: 20 }}>Generated by We Are Stardust — Nucleosynthesis Simulation • {new Date().toLocaleString()}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Print styles */}
+        <style>{`
+          @media print {
+            body, html { background: white !important; margin: 0 !important; }
+            body > div > div { background: none !important; }
+            .no-print { display: none !important; }
+            #printable-report { margin: 0 !important; padding: 16px !important; max-width: 100% !important; box-shadow: none !important; }
+            @page { margin: 0.5in; size: letter; }
+          }
+        `}</style>
+      </div>
+      </>
+      )}
+    </div>
+  );
+}
+
+// ─── WORKSHEET SUB-COMPONENTS ───────────────────────────────────────────────
+
+function SortWidget({ answers, setAnswers }) {
+  const [checked, setChecked] = useState(false);
+  const origins = ["big_bang", "stellar_fusion", "supernova", "neutron_merge", "cosmic_rays"];
+  const allPlaced = SORT_ITEMS.every(i => answers[i.element]);
+  const score = checked ? SORT_ITEMS.filter(i => answers[i.element] === i.origin).length : 0;
+  return (
+    <div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12, justifyContent: "center" }}>
+        {SORT_ITEMS.filter(i => !answers[i.element]).map(i => (
+          <div key={i.element} draggable onDragStart={e => e.dataTransfer.setData("el", i.element)} style={{ padding: "6px 14px", borderRadius: 7, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#CDD", cursor: "grab", fontSize: 13, fontWeight: 600 }}>{i.element}</div>
+        ))}
+        {allPlaced && !checked && <span style={{ fontSize: 12, color: "#556", fontStyle: "italic" }}>All placed!</span>}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 6 }}>
+        {origins.map(o => {
+          const ori = ORIGINS[o]; const placed = SORT_ITEMS.filter(i => answers[i.element] === o);
+          return (<div key={o} onDragOver={e => e.preventDefault()} onDrop={e => { const el = e.dataTransfer.getData("el"); if (el) { setAnswers({ ...answers, [el]: o }); setChecked(false); } }}
+            style={{ padding: "8px 10px", borderRadius: 8, minHeight: 60, border: "2px dashed " + ori.color + "44", background: ori.color + "08" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: ori.color, marginBottom: 4 }}>{ori.icon} {ori.short}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+              {placed.map(i => {
+                const c = checked && i.origin === o, w = checked && i.origin !== o;
+                return <div key={i.element} onClick={() => { const n = { ...answers }; delete n[i.element]; setAnswers(n); setChecked(false); }}
+                  style={{ padding: "3px 8px", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer", background: c ? "rgba(46,204,113,0.2)" : w ? "rgba(231,76,60,0.2)" : "rgba(255,255,255,0.08)", color: c ? "#2ECC71" : w ? "#E74C3C" : "#AAB", border: "1px solid " + (c ? "#2ECC71" : w ? "#E74C3C44" : "rgba(255,255,255,0.1)") }}>{i.element}{c && " ✓"}{w && " ✗"}</div>;
+              })}
+            </div>
+          </div>);
+        })}
+      </div>
+      <div style={{ textAlign: "center", marginTop: 8 }}>
+        <button onClick={() => setChecked(true)} disabled={!allPlaced} style={{ padding: "7px 18px", borderRadius: 7, border: "1px solid " + (allPlaced ? "rgba(46,204,113,0.3)" : "rgba(255,255,255,0.08)"), background: allPlaced ? "rgba(46,204,113,0.1)" : "rgba(255,255,255,0.03)", color: allPlaced ? "#2ECC71" : "#334", cursor: allPlaced ? "pointer" : "default", fontSize: 12, fontWeight: 600 }}>
+          {checked ? `Score: ${score}/${SORT_ITEMS.length}${score === SORT_ITEMS.length ? " 🌟" : ""}` : "Check Answers"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FillInWidget({ answers, setAnswers }) {
+  const items = [
+    { clue: "Heaviest element created by fusion inside a star", answer: "iron", alts: ["iron", "fe"] },
+    { clue: "Process that powers stars by combining lighter nuclei", answer: "fusion", alts: ["nuclear fusion", "fusion"] },
+    { clue: "Event where two neutron stars collide, creating gold", answer: "kilonova", alts: ["kilonova", "neutron star merger"] },
+    { clue: "Rapid neutron capture process that forges elements beyond iron", answer: "r-process", alts: ["r-process", "r process", "rapid neutron capture"] },
+    { clue: "Element making up ~60% of atoms in your body, from the Big Bang", answer: "hydrogen", alts: ["hydrogen", "h"] },
+    { clue: "High-energy particles that split atoms to create lithium and boron", answer: "cosmic rays", alts: ["cosmic rays", "cosmic ray", "cosmic ray fission"] },
+  ];
+  const [checked, setChecked] = useState({});
+  const check = i => { const u = (answers[i] || "").toLowerCase().trim(); setChecked({ ...checked, [i]: items[i].alts.some(a => u === a) }); };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {items.map((item, i) => (
+        <div key={i} style={{ padding: "10px 14px", borderRadius: 10, background: checked[i] === true ? "rgba(46,204,113,0.08)" : checked[i] === false ? "rgba(231,76,60,0.08)" : "rgba(255,255,255,0.03)", border: "1px solid " + (checked[i] === true ? "rgba(46,204,113,0.3)" : checked[i] === false ? "rgba(231,76,60,0.3)" : "rgba(255,255,255,0.06)") }}>
+          <p style={{ margin: "0 0 6px", fontSize: 13, color: "#BCC", lineHeight: 1.3 }}>{i + 1}. {item.clue}</p>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input type="text" value={answers[i] || ""} onChange={e => { setAnswers({ ...answers, [i]: e.target.value }); if (checked[i] !== undefined) { const c = { ...checked }; delete c[i]; setChecked(c); } }}
+              onKeyDown={e => { if (e.key === "Enter") check(i); }} placeholder="Type answer…"
+              style={{ flex: 1, padding: "7px 10px", borderRadius: 7, fontSize: 13, background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)", color: "#ECF0F1", outline: "none" }} />
+            <button onClick={() => check(i)} style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid rgba(52,152,219,0.3)", background: "rgba(52,152,219,0.1)", color: "#3498DB", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Check</button>
+          </div>
+          {checked[i] === true && <div style={{ marginTop: 4, fontSize: 12, color: "#2ECC71", fontWeight: 600 }}>✓ Correct!</div>}
+          {checked[i] === false && <div style={{ marginTop: 4, fontSize: 12, color: "#E74C3C" }}>✗ Try again</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CompareWidget({ answers, setAnswers }) {
+  const [rev, setRev] = useState(false);
+  return (
+    <div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 12 }}>
+          <thead><tr>
+            <th style={{ padding: "8px 10px", background: "rgba(230,126,34,0.15)", borderRadius: "8px 0 0 0", color: "#E67E22", textAlign: "left", fontWeight: 700 }}>Category</th>
+            <th style={{ padding: "8px 10px", background: "rgba(241,196,15,0.1)", color: "#F1C40F", textAlign: "left", fontWeight: 700 }}>⭐ Stellar Fusion</th>
+            <th style={{ padding: "8px 10px", background: "rgba(155,89,182,0.1)", borderRadius: "0 8px 0 0", color: "#9B59B6", textAlign: "left", fontWeight: 700 }}>💥 Explosive</th>
+          </tr></thead>
+          <tbody>{COMPARE_CATS.map((cat, i) => (
+            <tr key={i}>
+              <td style={{ padding: "8px 10px", color: "#99A", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.04)", background: "rgba(255,255,255,0.02)" }}>{cat}</td>
+              <td style={{ padding: "5px 6px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                {rev ? <span style={{ fontSize: 12, color: "#2ECC71" }}>{COMPARE_S[i]}</span> :
+                  <input type="text" value={answers["s_" + i] || ""} onChange={e => setAnswers({ ...answers, ["s_" + i]: e.target.value })} placeholder="Answer…"
+                    style={{ width: "100%", padding: "5px 8px", borderRadius: 5, fontSize: 12, boxSizing: "border-box", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)", color: "#ECF0F1", outline: "none" }} />}
+              </td>
+              <td style={{ padding: "5px 6px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                {rev ? <span style={{ fontSize: 12, color: "#2ECC71" }}>{COMPARE_E[i]}</span> :
+                  <input type="text" value={answers["e_" + i] || ""} onChange={e => setAnswers({ ...answers, ["e_" + i]: e.target.value })} placeholder="Answer…"
+                    style={{ width: "100%", padding: "5px 8px", borderRadius: 5, fontSize: 12, boxSizing: "border-box", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)", color: "#ECF0F1", outline: "none" }} />}
+              </td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      <div style={{ textAlign: "center", marginTop: 10 }}>
+        <button onClick={() => setRev(!rev)} style={{ padding: "7px 18px", borderRadius: 7, border: "1px solid rgba(46,204,113,0.3)", background: "rgba(46,204,113,0.1)", color: "#2ECC71", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>{rev ? "Hide Answers" : "Reveal Answers"}</button>
+      </div>
+    </div>
+  );
+}
+
+
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+  </script>
+</body>
+</html>

@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ATLAS — Earth Systems Modeler</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #030a14; min-height: 100vh; }
+    #root { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Storage shim: uses window.storage in Claude, localStorage on GitHub Pages -->
+  <script>
+    if (!window.storage) {
+      window.storage = {
+        get: async (key) => {
+          const val = localStorage.getItem(key);
+          return val ? { key, value: val } : null;
+        },
+        set: async (key, value) => {
+          localStorage.setItem(key, value);
+          return { key, value };
+        },
+        delete: async (key) => {
+          localStorage.removeItem(key);
+          return { key, deleted: true };
+        },
+        list: async (prefix) => {
+          const keys = Object.keys(localStorage).filter(k => !prefix || k.startsWith(prefix));
+          return { keys };
+        }
+      };
+    }
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.10/babel.min.js"></script>
+  <script type="text/babel">
+const { useEffect, useMemo, useRef, useState } = React;
+
+const MODELS = [
+  {
+    id: "yellowstone", name: "Yellowstone Caldera", icon: "🌋",
+    location: "Wyoming, USA",
+    tagline: "Magma pressure + ground deformation + seismicity = the trigger equation",
+    sliders: [
+      { key: "pressure", label: "Magma Chamber Pressure", unit: "% capacity",  min: 0,   max: 100,  real: 22,   hint: "Pressure in the magma reservoir. Builds as the hotspot feeds material upward." },
+      { key: "deform",   label: "Ground Uplift Rate",     unit: "cm / yr",     min: -5,  max: 15,   real: -0.5, hint: "Positive = doming upward. Negative = subsiding. Currently: slight subsidence." },
+      { key: "seismic",  label: "Earthquake Rate",        unit: "quakes / yr", min: 500, max: 8000, real: 2000, hint: "Micro-earthquakes signal rock fracturing under increasing stress." },
+      { key: "hydro",    label: "Hydrothermal Anomaly",   unit: "deg C above", min: 0,   max: 50,   real: 3,    hint: "Hotter hydrothermal features indicate more heat transferring from below." },
+    ],
+    weights: [0.45, 0.25, 0.20, 0.10],
+    trigger: (sl) => sl.pressure > 82 && (sl.deform > 12 || sl.seismic > 6800),
+    eventName: "VEI-8 SUPERERUPTION",
+    eventDesc: "Magma pressure exceeds crustal containment. A caldera-forming eruption begins.",
+    impacts: ["Ash blankets most of North America within 72 hours","Global temperatures drop 5-10 C for 1-2 years","US agriculture collapses for multiple growing seasons","All aviation grounded worldwide indefinitely"],
+    realStatus: "Current readings are within normal historical parameters. Annual supereruption probability: approximately 1 in 730,000.",
+  },
+  {
+    id: "lapalma", name: "La Palma Mega-Tsunami", icon: "🌊",
+    location: "Canary Islands, Atlantic Ocean",
+    tagline: "Eruption intensity + fracture depth + water saturation = collapse threshold",
+    sliders: [
+      { key: "vei",      label: "Eruption Intensity",     unit: "VEI (0-8)",   min: 0, max: 8,   real: 0,  hint: "A large eruption injects magma into the western flank, widening existing fractures." },
+      { key: "fracture", label: "Western Flank Fracture", unit: "% depth",     min: 0, max: 100, real: 40, hint: "The flank already fractured 40% during the 1949 eruption. More = less support." },
+      { key: "water",    label: "Rock Water Saturation",  unit: "% capacity",  min: 0, max: 100, real: 45, hint: "Saturated rock loses friction. Water acts as a lubricant on fracture planes." },
+      { key: "seismic",  label: "Flank Seismicity",       unit: "quakes/day",  min: 0, max: 300, real: 5,  hint: "Earthquakes shaking the unstable flank can directly dislodge the weakened mass." },
+    ],
+    weights: [0.35, 0.30, 0.20, 0.15],
+    trigger: (sl) => sl.vei >= 5 && sl.fracture > 80 && sl.water > 68,
+    eventName: "FLANK COLLAPSE - MEGA-TSUNAMI",
+    eventDesc: "The western flank of Cumbre Vieja detaches. 500 km of rock enters the Atlantic.",
+    impacts: ["Initial wave exceeds 100 meters near the collapse zone","US East Coast struck by 15-25 meter waves in 8-9 hours","Miami, New York, Boston all within the impact envelope"],
+    realStatus: "Scientific debate ongoing. Many researchers argue collapse would be gradual over centuries. The 2021 eruption produced no flank movement.",
+  },
+  {
+    id: "cascadia", name: "Cascadia Subduction Zone", icon: "⚡",
+    location: "Pacific Northwest, USA and Canada",
+    tagline: "Years of locked stress + fault conditions = a system with a finite limit",
+    sliders: [
+      { key: "years", label: "Years Since Last Rupture", unit: "years",    min: 0, max: 600, real: 325, hint: "Every year adds more stored elastic strain energy to the locked interface." },
+      { key: "lock",  label: "Fault Lock Coefficient",   unit: "% locked", min: 0, max: 100, real: 95,  hint: "A fully locked fault stores ALL convergence as elastic energy." },
+      { key: "pore",  label: "Pore Water Pressure",      unit: "0-100",    min: 0, max: 100, real: 20,  hint: "High pore pressure lubricates the fault and lowers the stress needed to trigger slip." },
+      { key: "rate",  label: "Plate Convergence Rate",   unit: "cm / yr",  min: 2, max: 7,   real: 4,   hint: "Faster convergence means more stress added to the locked zone per year." },
+    ],
+    weights: [0.40, 0.30, 0.20, 0.10],
+    trigger: (sl) => sl.years > 440 && sl.lock > 85 && sl.pore > 60,
+    eventName: "M9.2 CASCADIA RUPTURE",
+    eventDesc: "The locked interface fails. 1,000 km of fault ruptures in under 3 minutes.",
+    impacts: ["Ground shaking lasts 3-5 minutes across the Pacific Northwest","Tsunami reaches coast within 15-30 minutes of shaking","FEMA estimates 13,000+ deaths, 27,000 injuries, 1 million displaced"],
+    realStatus: "325 years since last rupture within the normal range but accumulating. Fault is near-fully locked. One of the most credible large-earthquake threats in North America.",
+  },
+];
+
+function calcDanger(model, sl) {
+  let t = 0;
+  model.sliders.forEach((s, i) => {
+    t += Math.max(0, Math.min(1, (sl[s.key] - s.min) / (s.max - s.min))) * model.weights[i];
+  });
+  return Math.min(1, t);
+}
+
+function mkSliders() {
+  const r = {};
+  MODELS.forEach(m => { const s = {}; m.sliders.forEach(sl => { s[sl.key] = sl.real; }); r[m.id] = s; });
+  return r;
+}
+function mkAssess() { const r = {}; MODELS.forEach(m => { r[m.id] = {}; }); return r; }
+
+const STORE_KEY = "atlas-v6";
+function storeLoad(cb) {
+  try {
+    if (!window.storage || !window.storage.get) return;
+    window.storage.get(STORE_KEY).then(r => {
+      if (!r) return;
+      try { const d = JSON.parse(r.value); if (d) cb(d); } catch(e) {}
+    }).catch(() => {});
+  } catch(e) {}
+}
+function storeSave(d) {
+  try { if (window.storage && window.storage.set) window.storage.set(STORE_KEY, JSON.stringify(d)); } catch(e) {}
+}
+function storeClear() {
+  try { if (window.storage && window.storage.delete) window.storage.delete(STORE_KEY); } catch(e) {}
+}
+
+function drawYS(ctx, W, H, sl, fr, danger, trig, tFr) {
+  ctx.clearRect(0, 0, W, H);
+  const pr = sl.pressure / 100;
+  const dm = (sl.deform + 5) / 20;
+  const hy = sl.hydro / 50;
+  const tP = (trig && tFr != null) ? Math.min((fr - tFr) / 100, 1) : 0;
+  const bY = H * 0.28, dp = dm * 38;
+
+  ctx.fillStyle = "#060C14"; ctx.fillRect(0, 0, W, H * 0.28);
+  ctx.beginPath(); ctx.moveTo(0, bY);
+  for (let x = 0; x <= W; x += 3) {
+    const dx = (x - W / 2) / (W / 2);
+    ctx.lineTo(x, bY - dp * Math.exp(-dx * dx * 2.8));
+  }
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  const sg = ctx.createLinearGradient(0, bY - dp, 0, bY + 30);
+  sg.addColorStop(0, "#1C3018"); sg.addColorStop(0.4, "#1A2812"); sg.addColorStop(1, "#2A1A0A");
+  ctx.fillStyle = sg; ctx.fill();
+
+  const cg = ctx.createLinearGradient(0, H * .42, 0, H * .68);
+  cg.addColorStop(0, "#2E1A0C"); cg.addColorStop(1, "#3A1C0E");
+  ctx.fillStyle = cg; ctx.fillRect(0, H * .42, W, H * .26);
+
+  const mg = ctx.createLinearGradient(0, H * .68, 0, H);
+  mg.addColorStop(0, "#6A1A05"); mg.addColorStop(1, "#3A0A02");
+  ctx.fillStyle = mg; ctx.fillRect(0, H * .68, W, H * .32);
+
+  const pW = 18 + pr * 40;
+  for (let y = H; y > H * .68; y -= 6) {
+    const yf = (H - y) / (H * .32);
+    const wx = Math.sin(y * .04 + fr * .06) * 6 * pr;
+    ctx.beginPath(); ctx.arc(W / 2 + wx, y, pW * (1 - yf * .25), 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(" + Math.floor(200 + pr * 55) + "," + Math.floor(60 + pr * 60) + ",10," + ((0.15 + pr * 0.3) * (1 - yf * 0.6)) + ")";
+    ctx.fill();
+  }
+
+  const cx = W / 2, cy = H * .55, crx = 38 + pr * 72, cry = 18 + pr * 32, pulse = Math.sin(fr * .06) * 4 * pr;
+  const chG = ctx.createRadialGradient(cx - crx * .2, cy - cry * .2, 2, cx, cy, crx + pulse);
+  chG.addColorStop(0, "rgba(255," + Math.floor(120 + pr * 80) + ",0,0.95)");
+  chG.addColorStop(0.4, "rgba(220," + Math.floor(60 + pr * 60) + ",0,0.75)");
+  chG.addColorStop(0.8, "rgba(160,20,0,0.4)"); chG.addColorStop(1, "rgba(100,0,0,0)");
+  ctx.beginPath(); ctx.ellipse(cx, cy + pulse * .5, crx + pulse, cry + pulse * .5, 0, 0, Math.PI * 2);
+  ctx.fillStyle = chG; ctx.fill();
+
+  [W * .18, W * .33, W * .67, W * .82].forEach((gx, i) => {
+    const t = ((fr * .7 + i * 23) % 50) / 50;
+    const gh = (8 + hy * 28) * Math.sin(t * Math.PI);
+    if (gh > 0) {
+      const gg = ctx.createLinearGradient(gx, bY, gx, bY - gh);
+      gg.addColorStop(0, "rgba(180,210,255," + (0.5 + hy * 0.4) + ")"); gg.addColorStop(1, "rgba(200,230,255,0)");
+      ctx.beginPath(); ctx.moveTo(gx - 2, bY); ctx.lineTo(gx - 2 - t * 3, bY - gh); ctx.lineTo(gx + 2 + t * 3, bY - gh); ctx.lineTo(gx + 2, bY);
+      ctx.fillStyle = gg; ctx.fill();
+    }
+  });
+
+  if (tP > 0.25) {
+    const cp = (tP - 0.25) / 0.75, colH = cp * H * 1.1, colW = 15 + cp * 70;
+    const eG = ctx.createLinearGradient(cx, bY, cx, bY - colH);
+    eG.addColorStop(0, "rgba(255,100,0,0.95)"); eG.addColorStop(0.3, "rgba(220,50,0,0.8)");
+    eG.addColorStop(0.65, "rgba(140,130,120,0.5)"); eG.addColorStop(1, "rgba(80,80,80,0)");
+    ctx.beginPath(); ctx.moveTo(cx - colW / 2, bY);
+    ctx.bezierCurveTo(cx - colW, bY - colH * .3, cx - colW * 1.8, bY - colH * .7, cx, bY - colH);
+    ctx.bezierCurveTo(cx + colW * 1.8, bY - colH * .7, cx + colW, bY - colH * .3, cx + colW / 2, bY);
+    ctx.fillStyle = eG; ctx.fill();
+  } else if (tP > 0) {
+    ctx.fillStyle = "rgba(255,120,0," + (tP * 4 * 0.6) + ")"; ctx.fillRect(0, 0, W, H);
+  }
+
+  ctx.font = "bold 8px monospace"; ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(80,130,80,0.7)"; ctx.fillText("SURFACE", 5, bY - dp - 5);
+  ctx.fillStyle = "rgba(100,70,40,0.7)"; ctx.fillText("CRUST", 5, H * .48);
+  ctx.fillStyle = "rgba(180,60,20,0.7)"; ctx.fillText("MANTLE", 5, H * .8);
+  ctx.fillStyle = "rgba(255," + Math.floor(140 + pr * 80) + ",0," + (0.6 + pr * 0.4) + ")";
+  ctx.textAlign = "center"; ctx.fillText("MAGMA CHAMBER", W / 2, cy + cry + 14 + pulse);
+}
+
+function drawLP(ctx, W, H, sl, fr, danger, trig, tFr) {
+  ctx.clearRect(0, 0, W, H);
+  const vei = sl.vei / 8, frac = sl.fracture / 100, water = sl.water / 100;
+  const tP = (trig && tFr != null) ? Math.min((fr - tFr) / 120, 1) : 0;
+
+  ctx.fillStyle = "#060C14"; ctx.fillRect(0, 0, W, H * .3);
+  const oG = ctx.createLinearGradient(0, H * .3, 0, H);
+  oG.addColorStop(0, "#0A1E3A"); oG.addColorStop(1, "#050E1F");
+  ctx.fillStyle = oG; ctx.fillRect(0, H * .3, W, H);
+
+  ctx.beginPath(); ctx.moveTo(0, H * .3);
+  for (let x = 0; x <= W; x += 4) ctx.lineTo(x, H * .3 + Math.sin(x * .08 + fr * .05) * 2.5);
+  ctx.lineTo(W, 0); ctx.lineTo(0, 0); ctx.closePath();
+  ctx.fillStyle = "#060C14"; ctx.fill();
+
+  const ftX = W * .62 - frac * 8, ftY = H * .1 + frac * 5, fbX = W * .52 - frac * 4;
+  ctx.beginPath(); ctx.moveTo(fbX, H * .3); ctx.lineTo(ftX, ftY); ctx.lineTo(W * .76, H * .04); ctx.lineTo(W, H * .3); ctx.closePath();
+  const iG = ctx.createLinearGradient(W * .6, 0, W * .6, H * .3);
+  iG.addColorStop(0, "#2A1205"); iG.addColorStop(0.6, "#3A1A08"); iG.addColorStop(1, "#4A2010");
+  ctx.fillStyle = iG; ctx.fill();
+
+  const sX = tP * 90, sY = tP * 40;
+  ctx.beginPath();
+  ctx.moveTo(W * .38 + sX, H * .3 + sY); ctx.lineTo(ftX - frac * 8 + sX, ftY + sY); ctx.lineTo(fbX + sX, H * .3 + sY);
+  ctx.closePath();
+  ctx.fillStyle = "rgb(" + Math.floor(50 + (1 - water) * 50) + "," + Math.floor(20 + (1 - frac) * 30) + "," + Math.floor(20 + water * 70 + frac * 30) + ")";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(" + Math.floor(frac * 200) + "," + Math.floor(60 - frac * 40) + ",0,0.6)";
+  ctx.lineWidth = 1.5; ctx.stroke();
+
+  if (!trig || tP < 0.1) {
+    ctx.beginPath(); ctx.moveTo(ftX, ftY);
+    ctx.quadraticCurveTo((ftX + fbX) / 2 + Math.sin(fr * .02) * frac * 4, (ftY + H * .3) / 2, fbX, H * .3);
+    ctx.strokeStyle = "rgba(255," + Math.floor(80 + frac * 80) + ",0," + (0.4 + frac * 0.5) + ")";
+    ctx.lineWidth = 1.5 + frac * 3.5; ctx.stroke();
+  }
+
+  if (vei > 0.1) {
+    const cH = vei * H * .55, cW = 4 + vei * 14, eX = W * .76, eY = H * .04;
+    const eG = ctx.createLinearGradient(eX, eY, eX, eY - cH);
+    eG.addColorStop(0, "rgba(255," + Math.floor(80 + vei * 120) + ",0,0.9)");
+    eG.addColorStop(0.3, "rgba(200,50,0," + (0.5 + vei * 0.3) + ")");
+    eG.addColorStop(0.7, "rgba(120,100,100," + (0.3 * vei) + ")"); eG.addColorStop(1, "rgba(80,80,80,0)");
+    ctx.beginPath();
+    ctx.moveTo(eX - cW, eY);
+    ctx.bezierCurveTo(eX - cW * 2, eY - cH * .4, eX - cW * 2.5, eY - cH * .7, eX, eY - cH);
+    ctx.bezierCurveTo(eX + cW * 2.5, eY - cH * .7, eX + cW * 2, eY - cH * .4, eX + cW, eY);
+    ctx.fillStyle = eG; ctx.fill();
+  }
+
+  if (tP > 0.2) {
+    const wP = (tP - 0.2) / 0.8, wX = W * .38 - wP * W * .55, wH = 40 + danger * 30 - wP * 25;
+    ctx.beginPath(); ctx.moveTo(wX, H * .3);
+    for (let x = 0; x <= wX; x += 4) {
+      const d = wX - x;
+      ctx.lineTo(x, H * .3 - wH * Math.exp(-d * .012) * Math.sin(d * .08 + Math.PI));
+    }
+    ctx.lineTo(0, H * .3); ctx.closePath();
+    const wG = ctx.createLinearGradient(0, H * .3 - wH, 0, H * .3);
+    wG.addColorStop(0, "rgba(20,100,200," + (0.6 * wP) + ")"); wG.addColorStop(1, "rgba(10,60,140,0)");
+    ctx.fillStyle = wG; ctx.fill();
+  }
+
+  ctx.font = "bold 8px monospace"; ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(60,100,180,0.7)"; ctx.fillText("ATLANTIC", 5, H * .55);
+  ctx.fillStyle = "rgba(180,80,20,0.7)"; ctx.fillText("CUMBRE VIEJA", W * .62, H * .22);
+  ctx.fillStyle = "rgba(255," + Math.floor(80 + frac * 100) + ",0," + (0.5 + frac * 0.4) + ")";
+  ctx.fillText("UNSTABLE FLANK", W * .38, H * .26);
+}
+
+function drawCS(ctx, W, H, sl, fr, danger, trig, tFr) {
+  ctx.clearRect(0, 0, W, H);
+  const yrs = sl.years / 600, lk = sl.lock / 100, po = sl.pore / 100, rt = (sl.rate - 2) / 5;
+  const tP = (trig && tFr != null) ? Math.min((fr - tFr) / 110, 1) : 0;
+
+  ctx.fillStyle = "#060C14"; ctx.fillRect(0, 0, W, H * .22);
+  const oG = ctx.createLinearGradient(0, H * .22, 0, H * .5);
+  oG.addColorStop(0, "#0A1E3A"); oG.addColorStop(1, "#061428");
+  ctx.fillStyle = oG; ctx.fillRect(0, H * .22, W * .55, H);
+
+  const jG = ctx.createLinearGradient(0, H * .34, 0, H * .62);
+  jG.addColorStop(0, "#0D2A4A"); jG.addColorStop(1, "#061828");
+  ctx.beginPath(); ctx.moveTo(0, H * .34); ctx.lineTo(W * .7, H * .46); ctx.lineTo(W * .7, H * .62); ctx.lineTo(0, H * .5); ctx.closePath();
+  ctx.fillStyle = jG; ctx.fill();
+
+  const nG = ctx.createLinearGradient(W * .38, H * .22, W * .38, H * .52);
+  nG.addColorStop(0, "#2A1A0A"); nG.addColorStop(0.4, "#3A2010"); nG.addColorStop(1, "#2A1508");
+  ctx.beginPath(); ctx.moveTo(W * .38, H * .22); ctx.lineTo(W, H * .22); ctx.lineTo(W, H * .52); ctx.lineTo(W * .38, H * .52); ctx.closePath();
+  ctx.fillStyle = nG; ctx.fill();
+
+  const wG = ctx.createLinearGradient(W * .5, H * .52, W * .5, H);
+  wG.addColorStop(0, "#5A1A05"); wG.addColorStop(1, "#3A0A02");
+  ctx.beginPath(); ctx.moveTo(W * .38, H * .52); ctx.lineTo(W * .7, H * .52); ctx.lineTo(W * .7, H); ctx.lineTo(W * .38, H); ctx.closePath();
+  ctx.fillStyle = wG; ctx.fill();
+
+  ctx.beginPath(); ctx.moveTo(W * .38, H * .46); ctx.lineTo(W * .9, H * .85); ctx.lineTo(W * .9, H); ctx.lineTo(W * .38, H * .62); ctx.closePath();
+  ctx.fillStyle = jG; ctx.fill();
+
+  const lX1 = W * .38, lY1 = H * .35, lX2 = W * .65, lY2 = H * .48;
+  const st = yrs * .5 + lk * .3 + po * .2;
+  const lR = Math.floor(100 + st * 155), lGG = Math.floor(80 - st * 70), lA = 0.4 + st * .5;
+
+  if (!trig || tP < 0.2) {
+    ctx.beginPath(); ctx.moveTo(lX1, lY1); ctx.lineTo(lX2, lY2);
+    ctx.lineWidth = (12 + st * 20) + Math.sin(fr * .05) * 3 * st;
+    ctx.strokeStyle = "rgba(" + lR + "," + lGG + ",0," + lA + ")"; ctx.stroke();
+    if (po > 0.25) {
+      for (let i = 0; i < Math.ceil(po * 8); i++) {
+        const t = i / 8;
+        ctx.beginPath(); ctx.arc(lX1 + (lX2 - lX1) * t + Math.sin(fr * .04 + i) * 5, lY1 + (lY2 - lY1) * t, 2 + po * 2, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(40,120,220," + (po * .7) + ")"; ctx.fill();
+      }
+    }
+  }
+
+  if (!trig) {
+    const angle = Math.atan2(lY2 - lY1, lX2 - lX1);
+    for (let i = 0; i < Math.min(Math.ceil(st * 6), 7); i++) {
+      const t = 0.1 + i * .12;
+      const ax = lX1 + (lX2 - lX1) * t - 30 - (i % 2) * 15, ay = lY1 + (lY2 - lY1) * t - 20 - (i % 3) * 8;
+      const aLen = 8 + st * 16, ex = ax + Math.cos(angle) * aLen, ey = ay + Math.sin(angle) * aLen;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey);
+      ctx.lineTo(ex - 5 * Math.cos(angle - .5), ey - 5 * Math.sin(angle - .5));
+      ctx.moveTo(ex, ey); ctx.lineTo(ex - 5 * Math.cos(angle + .5), ey - 5 * Math.sin(angle + .5));
+      ctx.strokeStyle = "rgba(" + lR + "," + lGG + ",0," + (0.4 + st * .5) + ")";
+      ctx.lineWidth = 1.5 + st * 1.5; ctx.stroke();
+    }
+  }
+
+  const ap = (fr * rt * .015) % 1, arX = 40 + ap * (W * .35);
+  ctx.beginPath(); ctx.moveTo(arX, H * .42); ctx.lineTo(arX + 18, H * .43);
+  ctx.lineTo(arX + 12, H * .41); ctx.moveTo(arX + 18, H * .43); ctx.lineTo(arX + 12, H * .45);
+  ctx.strokeStyle = "rgba(40,120,220," + (0.35 + rt * .35) + ")"; ctx.lineWidth = 1.5; ctx.stroke();
+
+  ctx.fillStyle = "#182808"; ctx.fillRect(W * .38, H * .16, W * .62, H * .08);
+  [{x: W * .58, label: "Portland"}, {x: W * .72, label: "Seattle"}].forEach(c => {
+    ctx.beginPath(); ctx.moveTo(c.x, H * .22); ctx.lineTo(c.x, H * .16);
+    ctx.strokeStyle = "rgba(180,180,200,0.6)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.beginPath(); ctx.arc(c.x, H * .14, 3, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(180,180,200,0.7)"; ctx.fill();
+    ctx.font = "7px monospace"; ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(160,160,180,0.6)"; ctx.fillText(c.label, c.x, H * .1);
+  });
+
+  if (tP > 0) {
+    ctx.beginPath(); ctx.moveTo(lX1, lY1);
+    for (let i = 0; i < tP * W * .5; i += 4) {
+      const t = i / (W * .5);
+      ctx.lineTo(lX1 + (lX2 - lX1) * t * 1.3 + Math.sin(i * .4) * 4 * tP, lY1 + (lY2 - lY1) * t * 1.3 + Math.cos(i * .3) * 4 * tP);
+    }
+    ctx.strokeStyle = "rgba(255," + Math.floor(200 - tP * 150) + ",0," + Math.min(1, tP * 3) + ")";
+    ctx.lineWidth = 3; ctx.stroke();
+    if (tP > .15) {
+      ctx.fillStyle = "rgba(255,200,0," + (tP * .08) + ")";
+      ctx.fillRect(W * .38, H * .15 + Math.sin(fr * .4) * tP * 8, W * .62, H * .09);
+    }
+    if (tP > .35) {
+      const wp = (tP - .35) / .65, twX = W * .38 - wp * W * .48;
+      ctx.beginPath(); ctx.moveTo(twX, H * .28);
+      for (let x = 0; x <= twX; x += 3) { const d = twX - x; ctx.lineTo(x, H * .28 - 30 * Math.exp(-d * .018) * Math.abs(Math.sin(d * .09))); }
+      ctx.lineTo(0, 0); ctx.lineTo(twX, 0); ctx.closePath();
+      ctx.fillStyle = "rgba(20,80,200," + (wp * .5) + ")"; ctx.fill();
+    }
+  }
+
+  ctx.font = "bold 8px monospace"; ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(40,100,180,0.7)"; ctx.fillText("JUAN DE FUCA PLATE", 8, H * .46);
+  ctx.fillStyle = "rgba(100,70,30,0.7)"; ctx.fillText("N. AMERICAN PLATE", W * .55, H * .36);
+  ctx.fillStyle = "rgba(180,60,20,0.7)"; ctx.fillText("MANTLE", W * .42, H * .75);
+  ctx.fillStyle = "rgba(" + lR + "," + lGG + ",0," + lA + ")"; ctx.textAlign = "center";
+  ctx.fillText("LOCKED ZONE", (lX1 + lX2) / 2 - 15, (lY1 + lY2) / 2 - 18);
+}
+
+const C = {
+  bg:"#111827", border:"rgba(255,255,255,0.13)", accent:"#FBBF24", accentDim:"rgba(251,191,36,0.12)",
+  info:"#60A5FA", infoDim:"rgba(96,165,250,0.1)", danger:"#F87171", dangerDim:"rgba(248,113,113,0.1)",
+  safe:"#4ADE80", safeDim:"rgba(74,222,128,0.1)", warn:"#FB923C",
+  text:"#F3F4F6", textSub:"#D1D5DB", textMuted:"#9CA3AF", dim:"rgba(255,255,255,0.04)",
+};
+const INP = { padding:"9px 12px", borderRadius:6, border:"1px solid rgba(255,255,255,0.2)", background:"rgba(255,255,255,0.07)", color:"#F3F4F6", fontSize:15, outline:"none", fontFamily:"inherit" };
+
+function ReportCard({ fwdRef, name, period, sliders, assessments, synth, triggered, doneCount }) {
+  return (
+    <div ref={fwdRef} style={{ background:"#fff", color:"#111", fontFamily:"Arial,sans-serif", padding:"28px 32px", width:640, boxSizing:"border-box" }}>
+      <div style={{ borderBottom:"3px solid #92400e", paddingBottom:12, marginBottom:18 }}>
+        <div style={{ fontSize:20, fontWeight:800, color:"#78350f", marginBottom:2 }}>ATLAS Earth Systems Modeler</div>
+        <div style={{ fontSize:12, color:"#92400e", marginBottom:10 }}>Geological Hazard Simulation Report</div>
+        <div style={{ display:"flex", gap:20, fontSize:13 }}>
+          <span><strong>Name:</strong> {name||"_______________"}</span>
+          <span><strong>Period:</strong> {period||"______"}</span>
+          <span><strong>Date:</strong> {new Date().toLocaleDateString()}</span>
+        </div>
+      </div>
+      {MODELS.map(m => {
+        const a = assessments[m.id]||{}, sl = sliders[m.id];
+        return (
+          <div key={m.id} style={{ marginBottom:20, paddingBottom:16, borderBottom:"1px solid #e5e7eb" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+              <div style={{ fontSize:15, fontWeight:700, color:"#1f2937" }}>{m.icon} {m.name}</div>
+              <div style={{ fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:4, background:triggered[m.id]?"#fee2e2":"#f3f4f6", color:triggered[m.id]?"#dc2626":"#6b7280" }}>
+                {triggered[m.id]?"TRIGGERED":"Not triggered"}
+              </div>
+            </div>
+            <div style={{ marginBottom:8, fontSize:12 }}>
+              <strong>Your values vs real-world:</strong>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"3px 12px", marginTop:4 }}>
+                {m.sliders.map(s => <span key={s.key} style={{ fontSize:11 }}><strong>{s.label}:</strong> {sl[s.key]} <span style={{ color:"#9ca3af" }}>(real: {s.real})</span></span>)}
+              </div>
+            </div>
+            <div style={{ fontSize:12, marginBottom:5 }}><strong>Threat Level:</strong> {a.level!==undefined?a.level+" / 10":"Not rated"}</div>
+            {[["critical","Most critical variable"],["comparison","Real system vs trigger threshold"],["monitor","Variable to monitor most closely"]].map(([k,label]) => {
+              const val=(a[k]||"").trim();
+              return <div key={k} style={{ marginBottom:5, fontSize:12 }}><strong>{label}:</strong> <span style={{ color:val?"#111":"#9ca3af", fontStyle:val?"normal":"italic" }}>{val||"Not answered"}</span></div>;
+            })}
+          </div>
+        );
+      })}
+      <div>
+        <div style={{ fontSize:15, fontWeight:700, color:"#1f2937", marginBottom:10 }}>Synthesis</div>
+        {[["common","Common mechanism"],["carbon","Carbon cycle connection"],["human","Most surprising factor"]].map(([k,label]) => {
+          const val=(synth[k]||"").trim();
+          return (
+            <div key={k} style={{ marginBottom:10, fontSize:12 }}>
+              <div style={{ fontWeight:700, color:"#374151", marginBottom:2 }}>{label}</div>
+              <div style={{ padding:"6px 10px", background:val?"#fffbeb":"#fff", border:"1px solid #e5e7eb", borderRadius:4, color:val?"#111":"#9ca3af", fontStyle:val?"normal":"italic", minHeight:28 }}>{val||"Not answered"}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ borderTop:"1px solid #e5e7eb", paddingTop:8, marginTop:8, display:"flex", justifyContent:"space-between", fontSize:11, color:"#9ca3af" }}>
+        <span>Triggered: {MODELS.filter(m=>triggered[m.id]).map(m=>m.name).join(", ")||"None"}</span>
+        <span>Assessments: {doneCount}/3</span>
+        <span>ATLAS Earth Systems Modeler</span>
+      </div>
+    </div>
+  );
+}
+
+function loadH2C() {
+  return new Promise((res, rej) => {
+    if (window.html2canvas) { res(); return; }
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+    s.onload = res; s.onerror = () => rej(new Error("load failed"));
+    document.head.appendChild(s);
+  });
+}
+
+function App() {
+  const [hIdx,        setHIdx]        = useState(0);
+  const [subTab,      setSubTab]      = useState("model");
+  const [sliders,     setSliders]     = useState(mkSliders);
+  const [triggered,   setTriggered]   = useState({ yellowstone:false, lapalma:false, cascadia:false });
+  const [showEvent,   setShowEvent]   = useState(null);
+  const [assessments, setAssessments] = useState(mkAssess);
+  const [synth,       setSynth]       = useState({});
+  const [uName,       setUName]       = useState("");
+  const [uPeriod,     setUPeriod]     = useState("");
+  const [showExport,  setShowExport]  = useState(false);
+  const [exportBusy,  setExportBusy]  = useState(false);
+  const [exportDone,  setExportDone]  = useState(false);
+  const [saveLabel,   setSaveLabel]   = useState(null);
+
+  const slidersRef   = useRef(sliders);
+  const triggeredRef = useRef(triggered);
+  const trigFrRef    = useRef({ yellowstone:null, lapalma:null, cascadia:null });
+  const canvasRef    = useRef(null);
+  const frameRef     = useRef(0);
+  const reportRef    = useRef(null);
+  const saveTimer    = useRef(null);
+
+  useEffect(() => { slidersRef.current   = sliders;   }, [sliders]);
+  useEffect(() => { triggeredRef.current = triggered; }, [triggered]);
+
+  useEffect(() => {
+    storeLoad(d => {
+      if (d.sliders)      { setSliders(d.sliders);     slidersRef.current   = d.sliders;   }
+      if (d.triggered)    { setTriggered(d.triggered); triggeredRef.current = d.triggered; }
+      if (d.assessments)  setAssessments(d.assessments);
+      if (d.synth)        setSynth(d.synth);
+      if (d.uName)        setUName(d.uName);
+      if (d.uPeriod)      setUPeriod(d.uPeriod);
+    });
+  }, []);
+
+  const saveable = useMemo(() => ({ sliders, triggered, assessments, synth, uName, uPeriod }),
+    [sliders, triggered, assessments, synth, uName, uPeriod]);
+  useEffect(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setSaveLabel("saving");
+    saveTimer.current = setTimeout(() => {
+      storeSave(saveable);
+      setSaveLabel("saved");
+      setTimeout(() => setSaveLabel(null), 2000);
+    }, 1500);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, [saveable]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const fns = { yellowstone:drawYS, lapalma:drawLP, cascadia:drawCS };
+    const hz = MODELS[hIdx];
+    let id;
+    const draw = () => {
+      frameRef.current++;
+      fns[hz.id](ctx, 480, 300, slidersRef.current[hz.id], frameRef.current,
+        calcDanger(hz, slidersRef.current[hz.id]), triggeredRef.current[hz.id], trigFrRef.current[hz.id]);
+      id = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => cancelAnimationFrame(id);
+  }, [hIdx, subTab]);
+
+  useEffect(() => {
+    const hz = MODELS[hIdx];
+    if (!triggered[hz.id] && hz.trigger(sliders[hz.id])) {
+      trigFrRef.current = { ...trigFrRef.current, [hz.id]: frameRef.current };
+      setTimeout(() => { setTriggered(p => ({ ...p, [hz.id]: true })); setShowEvent(hz.id); }, 1200);
+    }
+  }, [sliders, hIdx]);
+
+  const model  = MODELS[hIdx];
+  const sl     = sliders[model.id];
+  const danger = calcDanger(model, sl);
+  const isTrig = triggered[model.id];
+  const hzA    = assessments[model.id] || {};
+  const dC     = danger<0.4?C.safe:danger<0.65?C.warn:danger<0.82?"#F97316":C.danger;
+  const dL     = danger<0.4?"Stable":danger<0.65?"Elevated":danger<0.82?"High":danger<0.95?"Critical":"Extreme";
+
+  const setSl    = (key, val) => setSliders(p => ({ ...p, [model.id]: { ...p[model.id], [key]: val } }));
+  const setA     = (key, val) => setAssessments(p => ({ ...p, [model.id]: { ...(p[model.id]||{}), [key]: val } }));
+  const resetHaz = () => {
+    const d = {}; model.sliders.forEach(s => { d[s.key] = s.real; });
+    setSliders(p => ({ ...p, [model.id]: d }));
+    setTriggered(p => ({ ...p, [model.id]: false }));
+    trigFrRef.current = { ...trigFrRef.current, [model.id]: null };
+    setShowEvent(null);
+  };
+  const isDone   = (id) => {
+    const a = assessments[id]||{};
+    return ["critical","comparison","monitor","level"].filter(k => (a[k]||"").toString().trim()).length >= 3;
+  };
+  const allDone  = MODELS.every(m => isDone(m.id));
+  const doneCount= MODELS.filter(m => isDone(m.id)).length;
+  const clearAll = () => {
+    if (!confirm("Clear all saved data?")) return;
+    storeClear();
+    setSliders(mkSliders()); setTriggered({ yellowstone:false,lapalma:false,cascadia:false });
+    trigFrRef.current={yellowstone:null,lapalma:null,cascadia:null};
+    setAssessments(mkAssess()); setSynth({}); setUName(""); setUPeriod(""); setShowEvent(null);
+  };
+  const doExport = async () => {
+    setExportBusy(true); setExportDone(false);
+    try {
+      await loadH2C();
+      const cv = await window.html2canvas(reportRef.current, { backgroundColor:"#fff", scale:2, useCORS:false, logging:false });
+      const png = cv.toDataURL("image/png");
+      if (navigator.canShare) {
+        try {
+          const blob = await fetch(png).then(r => r.blob());
+          const file = new File([blob],"atlas-report.png",{type:"image/png"});
+          if (navigator.canShare({files:[file]})) { await navigator.share({title:"ATLAS Report",files:[file]}); setExportBusy(false); return; }
+        } catch(e) {}
+      }
+      const a = document.createElement("a"); a.href=png; a.download="atlas-earth-report.png"; a.click();
+      setExportDone(true);
+    } catch(e) { alert("Export failed. Screenshot the report below."); }
+    setExportBusy(false);
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", background:C.bg, color:C.text, fontFamily:"system-ui,-apple-system,sans-serif" }}>
+      {showEvent && (
+        <div style={{ position:"fixed",inset:0,zIndex:200,background:"rgba(0,0,0,0.88)",display:"flex",alignItems:"center",justifyContent:"center",padding:20 }}>
+          <div style={{ maxWidth:540,width:"100%",padding:32,borderRadius:16,border:"2px solid "+C.danger,background:"#1a0808" }}>
+            <div style={{ fontSize:12,fontWeight:700,color:C.danger,marginBottom:10 }}>THRESHOLD EXCEEDED</div>
+            <div style={{ fontSize:22,fontWeight:800,color:C.danger,marginBottom:10,lineHeight:1.25 }}>{model.eventName}</div>
+            <div style={{ fontSize:15,color:C.textSub,lineHeight:1.75,marginBottom:22 }}>{model.eventDesc}</div>
+            <div style={{ marginBottom:24 }}>
+              {model.impacts.map((imp,i) => (
+                <div key={i} style={{ display:"flex",gap:10,marginBottom:8,fontSize:14,color:C.text,lineHeight:1.5 }}>
+                  <span style={{ color:C.danger,flexShrink:0,fontWeight:700 }}>-</span><span>{imp}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:"flex",gap:12 }}>
+              <button onClick={() => { setShowEvent(null); setSubTab("assess"); }} style={{ flex:1,padding:14,borderRadius:10,border:"none",background:C.accent,color:"#000",fontWeight:800,fontSize:15,cursor:"pointer" }}>File My Assessment</button>
+              <button onClick={resetHaz} style={{ padding:"14px 18px",borderRadius:10,border:"1px solid "+C.border,background:"transparent",color:C.textSub,cursor:"pointer",fontSize:14 }}>Reset</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ position:"sticky",top:0,zIndex:50,background:"rgba(17,24,39,0.97)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderBottom:"1px solid "+C.border,padding:"12px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10 }}>
+        <div style={{ display:"flex",alignItems:"center",gap:12 }}>
+          <div style={{ width:10,height:10,borderRadius:"50%",background:C.safe,flexShrink:0,animation:"ap 2s ease-in-out infinite" }} />
+          <div>
+            <div style={{ fontSize:16,fontWeight:800,color:C.accent }}>ATLAS - Earth Systems Modeler</div>
+            <div style={{ fontSize:12,color:C.textMuted }}>Geological Hazard Simulation</div>
+          </div>
+        </div>
+        <div style={{ display:"flex",gap:8,alignItems:"center",flexWrap:"wrap" }}>
+          <input value={uName} onChange={e=>setUName(e.target.value)} placeholder="Your name" style={{ ...INP,width:140 }} />
+          <input value={uPeriod} onChange={e=>setUPeriod(e.target.value)} placeholder="Period" style={{ ...INP,width:70 }} />
+          <button onClick={() => { setShowExport(true); setExportDone(false); }} style={{ minHeight:44,padding:"0 16px",borderRadius:8,border:"1px solid rgba(74,222,128,0.4)",background:C.safeDim,color:C.safe,cursor:"pointer",fontSize:14,fontWeight:700 }}>Export</button>
+          <button onClick={clearAll} style={{ minHeight:44,minWidth:44,borderRadius:8,border:"1px solid rgba(248,113,113,0.3)",background:"transparent",color:C.danger,cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center" }}>X</button>
+          {saveLabel && <span style={{ fontSize:13,fontWeight:600,color:saveLabel==="saving"?C.warn:C.safe }}>{saveLabel==="saving"?"Saving...":"Saved"}</span>}
+        </div>
+      </div>
+
+      <div style={{ maxWidth:980,margin:"0 auto",padding:"18px 16px 60px" }}>
+        <div style={{ marginBottom:20,padding:"14px 18px",borderRadius:10,background:C.accentDim,border:"1px solid rgba(251,191,36,0.28)" }}>
+          <div style={{ fontSize:13,fontWeight:700,color:C.accent,marginBottom:6 }}>Mission Briefing</div>
+          <p style={{ margin:0,fontSize:14,color:C.textSub,lineHeight:1.75 }}>Each hazard is controlled by real geological variables. Adjust the sliders and watch how the system responds. Your goal: find the combination that triggers the event, then assess how close the real system actually is.</p>
+        </div>
+
+        <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:18 }}>
+          {MODELS.map((m,i) => {
+            const done=isDone(m.id), active=hIdx===i, trig=triggered[m.id];
+            return (
+              <button key={m.id} onClick={() => { setHIdx(i); setSubTab("model"); setShowEvent(null); }}
+                style={{ padding:"16px 12px",borderRadius:10,textAlign:"left",cursor:"pointer",minHeight:100,outline:"none",border:"2px solid "+(active?C.accent:done?C.safe:trig?C.danger:C.border),background:active?C.accentDim:trig?C.dangerDim:done?C.safeDim:C.dim }}>
+                <div style={{ fontSize:28,marginBottom:6 }}>{m.icon}</div>
+                <div style={{ fontSize:13,fontWeight:700,marginBottom:4,color:active?C.accent:done?C.safe:trig?C.danger:C.textSub }}>{m.name}</div>
+                <div style={{ fontSize:12,fontWeight:600,color:done?C.safe:trig?C.danger:C.textMuted }}>{done?"Assessed":trig?"Triggered":"Stable"}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ borderRadius:12,border:"1px solid "+C.border,overflow:"hidden",marginBottom:24,background:"rgba(255,255,255,0.02)" }}>
+          <div style={{ display:"flex",borderBottom:"1px solid "+C.border }}>
+            {[["model","Systems Model"],["assess","Assessment"+(isDone(model.id)?" checkmark":"")]].map(([id,label],idx) => (
+              <button key={id} onClick={() => setSubTab(id)} style={{ flex:1,minHeight:50,padding:"0 8px",border:"none",borderRight:idx===0?"1px solid "+C.border:"none",background:subTab===id?C.accentDim:"transparent",color:subTab===id?C.accent:C.textMuted,cursor:"pointer",fontSize:15,fontWeight:700 }}>
+                {id==="assess"?"Assessment"+(isDone(model.id)?" \u2713":""):label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ padding:"14px 18px",borderBottom:"1px solid "+C.border,display:"flex",alignItems:"flex-start",gap:14 }}>
+            <div style={{ fontSize:32,lineHeight:1,paddingTop:2,flexShrink:0 }}>{model.icon}</div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:19,fontWeight:800,color:C.text }}>{model.name}</div>
+              <div style={{ fontSize:13,color:C.textMuted,marginTop:3 }}>{model.location}</div>
+              <div style={{ fontSize:13,color:C.textMuted,fontStyle:"italic",marginTop:2 }}>{model.tagline}</div>
+            </div>
+            {isTrig && <button onClick={resetHaz} style={{ minHeight:44,padding:"0 14px",borderRadius:8,border:"1px solid rgba(248,113,113,0.4)",background:C.dangerDim,color:C.danger,cursor:"pointer",fontSize:13,fontWeight:700,flexShrink:0 }}>Reset</button>}
+          </div>
+
+          {subTab==="model" && (
+            <div style={{ display:"flex",flexWrap:"wrap" }}>
+              <div style={{ flex:"0 0 auto",padding:"16px 16px 12px",display:"flex",flexDirection:"column",alignItems:"flex-start",gap:10 }}>
+                <canvas ref={canvasRef} width={480} height={300} style={{ width:"100%",maxWidth:480,height:"auto",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",display:"block" }} />
+                <div style={{ maxWidth:480,width:"100%",padding:"10px 14px",borderRadius:8,background:C.infoDim,border:"1px solid rgba(96,165,250,0.22)" }}>
+                  <div style={{ fontSize:11,fontWeight:700,color:C.info,marginBottom:5 }}>REAL-WORLD STATUS</div>
+                  <div style={{ fontSize:13,color:C.textSub,lineHeight:1.65 }}>{model.realStatus}</div>
+                </div>
+              </div>
+              <div style={{ flex:"1 1 280px",padding:"16px 18px",borderLeft:"1px solid "+C.border }}>
+                <div style={{ marginBottom:20,padding:"14px 16px",borderRadius:10,background:danger>0.65?C.dangerDim:danger>0.4?"rgba(251,146,60,0.1)":C.safeDim,border:"1px solid "+(danger>0.65?"rgba(248,113,113,0.35)":danger>0.4?"rgba(251,146,60,0.35)":"rgba(74,222,128,0.35)") }}>
+                  <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
+                    <span style={{ fontSize:14,fontWeight:600,color:C.textSub }}>System Danger Level</span>
+                    <span style={{ fontSize:16,fontWeight:800,color:dC }}>{dL} {Math.round(danger*100)}%</span>
+                  </div>
+                  <div style={{ height:10,background:"rgba(255,255,255,0.1)",borderRadius:5,overflow:"hidden" }}>
+                    <div style={{ height:"100%",width:danger*100+"%",background:"linear-gradient(90deg,"+C.safe+","+C.warn+" 50%,"+C.danger+")",borderRadius:5,transition:"width 0.25s" }} />
+                  </div>
+                  {isTrig && <div style={{ marginTop:10,fontSize:14,fontWeight:700,color:C.danger,textAlign:"center" }}>EVENT TRIGGERED</div>}
+                  {!isTrig&&danger>0.78&&<div style={{ marginTop:10,fontSize:14,fontWeight:600,color:C.warn,textAlign:"center" }}>Approaching threshold</div>}
+                </div>
+                {model.sliders.map(s => {
+                  const norm=Math.max(0,Math.min(1,(sl[s.key]-s.min)/(s.max-s.min)));
+                  const rn=Math.max(0,Math.min(1,(s.real-s.min)/(s.max-s.min)));
+                  const sc=norm>0.8?C.danger:norm>0.55?C.warn:C.info;
+                  const dv=Number.isInteger(sl[s.key])?String(sl[s.key]):sl[s.key].toFixed(1);
+                  const step=(s.max-s.min)>20?Math.round((s.max-s.min)/100):0.5;
+                  return (
+                    <div key={s.key} style={{ marginBottom:20 }}>
+                      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6 }}>
+                        <span style={{ fontSize:14,fontWeight:700,color:C.text }}>{s.label}</span>
+                        <div style={{ display:"flex",gap:12,alignItems:"center" }}>
+                          <span style={{ fontSize:12,color:C.textMuted }}>real: {s.real}</span>
+                          <span style={{ fontSize:17,fontWeight:800,color:sc,fontFamily:"monospace" }}>{dv}</span>
+                        </div>
+                      </div>
+                      <div style={{ position:"relative",marginBottom:5 }}>
+                        <input type="range" min={s.min} max={s.max} step={step} value={sl[s.key]} onChange={e => setSl(s.key, Number(e.target.value))} style={{ width:"100%",cursor:"pointer",accentColor:sc }} />
+                        <div style={{ position:"absolute",top:"50%",left:"calc("+rn*100+"% - 6px)",transform:"translateY(-50%)",width:12,height:12,borderRadius:"50%",background:C.info,border:"2px solid "+C.bg,pointerEvents:"none",opacity:0.75 }} />
+                      </div>
+                      <div style={{ display:"flex",justifyContent:"space-between",fontSize:12,color:C.textMuted,marginBottom:4 }}>
+                        <span>{s.min}</span><span style={{ color:C.info }}>blue dot = real value</span><span>{s.max} {s.unit}</span>
+                      </div>
+                      <div style={{ fontSize:13,color:C.textMuted,lineHeight:1.55 }}>{s.hint}</div>
+                    </div>
+                  );
+                })}
+                <button onClick={resetHaz} style={{ marginTop:4,width:"100%",minHeight:46,borderRadius:8,border:"1px solid "+C.border,background:"transparent",color:C.textMuted,cursor:"pointer",fontSize:14 }}>Reset to Real Values</button>
+              </div>
+            </div>
+          )}
+
+          {subTab==="assess" && (
+            <div style={{ padding:20 }}>
+              {isTrig && <div style={{ marginBottom:18,padding:"12px 16px",borderRadius:8,background:C.dangerDim,border:"1px solid rgba(248,113,113,0.35)",fontSize:14,color:C.danger,fontWeight:600,lineHeight:1.5 }}>You triggered this event. Use what you experienced to answer the questions below.</div>}
+              <div style={{ marginBottom:22 }}>
+                <div style={{ fontSize:15,fontWeight:700,color:C.text,marginBottom:10 }}>Your Threat Level Rating</div>
+                <div style={{ display:"flex",alignItems:"center",gap:16 }}>
+                  <input type="range" min={1} max={10} value={hzA.level||5} onChange={e => setA("level", Number(e.target.value))} style={{ flex:1,cursor:"pointer",accentColor:(hzA.level||5)>=7?C.danger:(hzA.level||5)>=4?C.warn:C.safe }} />
+                  <div style={{ width:48,fontSize:26,fontWeight:800,textAlign:"center",fontFamily:"monospace",flexShrink:0,color:(hzA.level||5)>=7?C.danger:(hzA.level||5)>=4?C.warn:C.safe }}>{hzA.level||5}</div>
+                </div>
+                <div style={{ display:"flex",justifyContent:"space-between",fontSize:12,color:C.textMuted,marginTop:4 }}><span>1 Minimal</span><span>5 Moderate</span><span>10 Catastrophic</span></div>
+              </div>
+              {[{key:"critical",label:"Which variable is most critical in this system?",hint:"Not just the most extreme - which one would most change the outcome if it shifted?"},{key:"comparison",label:"Compare the real readings to what triggered the event.",hint:"How far is the actual system from the threshold you found?"},{key:"monitor",label:"Which variable would you monitor most closely, and why?",hint:"Think about what would give scientists the earliest possible warning."}].map(f => (
+                <div key={f.key} style={{ marginBottom:18 }}>
+                  <div style={{ fontSize:15,fontWeight:700,color:C.text,marginBottom:4 }}>{f.label}</div>
+                  <div style={{ fontSize:13,color:C.textMuted,fontStyle:"italic",marginBottom:8 }}>{f.hint}</div>
+                  <textarea value={hzA[f.key]||""} onChange={e => setA(f.key, e.target.value)} rows={3} style={{ width:"100%",padding:"12px 13px",borderRadius:8,resize:"vertical",outline:"none",fontFamily:"inherit",boxSizing:"border-box",fontSize:15,lineHeight:1.65,border:"1px solid "+((hzA[f.key]||"").length>10?"rgba(96,165,250,0.45)":C.border),background:"rgba(255,255,255,0.05)",color:C.text }} />
+                </div>
+              ))}
+              <div style={{ padding:"12px 16px",borderRadius:8,fontSize:14,fontWeight:600,textAlign:"center",background:isDone(model.id)?C.safeDim:C.dim,border:"1px solid "+(isDone(model.id)?"rgba(74,222,128,0.35)":C.border),color:isDone(model.id)?C.safe:C.textMuted }}>
+                {isDone(model.id)?"Assessment filed - "+doneCount+" of 3 complete":"Set a threat level and answer at least 2 questions to file"}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {allDone ? (
+          <div style={{ padding:24,borderRadius:12,border:"1px solid rgba(251,191,36,0.35)",background:C.accentDim }}>
+            <div style={{ fontSize:18,fontWeight:800,color:C.accent,marginBottom:8 }}>Synthesis - Connecting the Systems</div>
+            <p style={{ margin:"0 0 22px",fontSize:15,color:C.textSub,lineHeight:1.75 }}>You have modeled all three Earth systems. Step back and connect them.</p>
+            {[{key:"common",prompt:"All three systems involve slow energy accumulation and sudden release. Describe the common mechanism - what is accumulating, and what finally overcomes it?"},{key:"carbon",prompt:"Yellowstone emits roughly 45,000 tons of CO2 per day through its hydrothermal system - part of Earth's natural carbon cycle that has regulated climate for billions of years. What happens when something begins releasing carbon much faster than that cycle can absorb?"},{key:"human",prompt:"Across all three hazards, which factor surprised you most in terms of how much or how little influence it had on the system? What does that tell you about Earth science?"}].map((q,i) => (
+              <div key={q.key} style={{ marginBottom:20 }}>
+                <div style={{ fontSize:15,fontWeight:700,color:C.text,marginBottom:8,lineHeight:1.6 }}>{i+1}. {q.prompt}</div>
+                <textarea value={synth[q.key]||""} onChange={e => setSynth(p => ({ ...p,[q.key]:e.target.value }))} rows={3} style={{ width:"100%",padding:"12px 14px",borderRadius:8,resize:"vertical",outline:"none",fontFamily:"inherit",boxSizing:"border-box",fontSize:15,lineHeight:1.65,border:"1px solid "+((synth[q.key]||"").length>10?"rgba(251,191,36,0.4)":C.border),background:"rgba(255,255,255,0.05)",color:C.text }} />
+              </div>
+            ))}
+            {Object.values(synth).filter(s=>(s||"").trim().length>20).length>=2&&<div style={{ padding:"14px 18px",borderRadius:8,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:14,color:C.accent,lineHeight:1.65,fontWeight:500 }}>Investigation complete. The connection between Earth systems and climate will be the subject of the next investigation.</div>}
+          </div>
+        ) : (
+          <div style={{ padding:"18px 22px",borderRadius:10,textAlign:"center",border:"1px dashed rgba(255,255,255,0.14)",fontSize:15,color:C.textMuted }}>{"Synthesis unlocks when all 3 assessments are filed - "+doneCount+" of 3 complete"}</div>
+        )}
+      </div>
+
+      {showExport && (
+        <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.9)",zIndex:100,overflowY:"auto",WebkitOverflowScrolling:"touch" }}>
+          <div style={{ position:"sticky",top:0,background:"rgba(17,24,39,0.98)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",padding:"12px 22px",borderBottom:"1px solid "+C.border,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10 }}>
+            <div>
+              <div style={{ fontSize:16,fontWeight:700,color:C.accent }}>Export Student Report</div>
+              <div style={{ fontSize:13,color:C.textMuted }}>iPad: tap Save Image, then Save to Photos or Files</div>
+            </div>
+            <div style={{ display:"flex",gap:10 }}>
+              <button onClick={doExport} disabled={exportBusy} style={{ minHeight:46,padding:"0 22px",borderRadius:8,border:"none",background:exportBusy?C.textMuted:C.accent,color:"#000",fontWeight:800,fontSize:15,cursor:exportBusy?"default":"pointer" }}>{exportBusy?"Saving...":exportDone?"Saved!":"Save Image"}</button>
+              <button onClick={() => setShowExport(false)} style={{ minHeight:46,padding:"0 18px",borderRadius:8,border:"1px solid "+C.border,background:"transparent",color:C.textSub,cursor:"pointer",fontSize:15 }}>Close</button>
+            </div>
+          </div>
+          <div style={{ padding:"20px 16px 40px",display:"flex",justifyContent:"center" }}>
+            <div style={{ boxShadow:"0 8px 32px rgba(0,0,0,0.5)",borderRadius:8,overflow:"hidden" }}>
+              <ReportCard fwdRef={reportRef} name={uName} period={uPeriod} sliders={sliders} assessments={assessments} synth={synth} triggered={triggered} doneCount={doneCount} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{"@keyframes ap{0%,100%{opacity:1}50%{opacity:0.4}}"}</style>
+    </div>
+  );
+}
+
+
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+  </script>
+</body>
+</html>
