@@ -19,7 +19,7 @@
     .unit-tag { font-size: 10px; font-weight: 700; color: #0D9E7A; letter-spacing: .14em; margin-bottom: 8px; }
     h1 { font-size: 26px; font-weight: 900; color: #d8eef8; margin-bottom: 4px; }
     .sub { font-size: 12px; color: #4a7088; font-style: italic; margin-bottom: 40px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; width: 100%; max-width: 900px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; width: 100%; max-width: 960px; }
     .card {
       background: rgba(255,255,255,.025);
       border: 1px solid #1a3050;
@@ -40,9 +40,11 @@
     .card-tag   { font-size: 10px; font-family: monospace; color: #1a5040;
                   background: rgba(13,158,122,.08); border: 1px solid rgba(13,158,122,.15);
                   border-radius: 4px; padding: 2px 7px; align-self: flex-start; margin-top: auto; }
-    hr { width: 100%; max-width: 900px; border: none; border-top: 1px solid #1a3050; margin: 32px 0; }
+    .card-tag.blue { color: #1a4060; background: rgba(26,111,170,.08); border-color: rgba(26,111,170,.2); }
+    .card-tag.warm { color: #5a2a08; background: rgba(212,114,14,.08); border-color: rgba(212,114,14,.2); }
+    hr { width: 100%; max-width: 960px; border: none; border-top: 1px solid #1a3050; margin: 32px 0; }
     .section-label { font-size: 10px; font-weight: 700; color: #4a7088; letter-spacing: .12em;
-                     width: 100%; max-width: 900px; margin-bottom: -6px; }
+                     width: 100%; max-width: 960px; margin-bottom: -6px; }
     footer { margin-top: 48px; font-size: 10px; color: #1a3050; font-family: monospace; }
   </style>
 </head>
@@ -75,10 +77,17 @@
     </a>
     <a class="card" href="ring-of-fire-v2.html">
       <div class="card-icon">🗺️</div>
-      <div class="card-day">DAY 2</div>
+      <div class="card-day">DAY 2 — INQUIRY</div>
       <div class="card-title">Where Does Earth Break?</div>
       <div class="card-desc">Explore real earthquake and volcano data on a world map. Predict where plate boundaries are — then reveal them.</div>
       <div class="card-tag">map inquiry</div>
+    </a>
+    <a class="card" href="plates-deck-v1.html">
+      <div class="card-icon">🪨</div>
+      <div class="card-day">DAY 2 — DIRECT INSTRUCTION</div>
+      <div class="card-title">Tectonic Plates — Slide Deck</div>
+      <div class="card-desc">11-slide presenter covering Earth's layers, convection, boundary types, hotspots, and ATLAS connections. Arrow keys or swipe to navigate.</div>
+      <div class="card-tag blue">slide deck</div>
     </a>
   </div>
 
